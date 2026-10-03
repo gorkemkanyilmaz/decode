@@ -33,6 +33,8 @@ export class Game {
   private localKills: number = 0;
   private localDeaths: number = 0;
   private roundTimer: number = 0;
+  private hasSpawned: boolean = false;
+  private wasDead: boolean = false;
 
   private playersMap: Map<string, PlayerPublicInfo> = new Map();
   private inputSequence: number = 0;
@@ -133,10 +135,17 @@ export class Game {
           } else if (msg.state === 'PLAYING') {
             this.soundSystem.playRoundStart();
             this.uiManager.showHUD(this.localNumber);
+            if (!this.hasSpawned) {
+              // Ensure player is at ground level immediately rather than high preview camera
+              this.cameraController.setSpawn([0, 0, 0], 0);
+            }
           } else if (msg.state === 'ROUND_END') {
+            this.hasSpawned = false;
             const playersList = Array.from(this.playersMap.values());
             const winner = playersList.sort((a, b) => b.score - a.score)[0];
             this.uiManager.showRoundEnd(playersList, winner?.name || 'Top Agent');
+          } else if (msg.state === 'LOBBY') {
+            this.hasSpawned = false;
           }
           break;
         }
@@ -159,6 +168,17 @@ export class Game {
             if (selfSnap.visibleNumber) {
               this.localNumber = selfSnap.visibleNumber;
             }
+
+            // Align local camera with authoritative spawn position on ground upon entering match or respawning
+            if (this.currentState === 'PLAYING' || this.currentState === 'COUNTDOWN') {
+              if (!this.hasSpawned || (this.wasDead && !selfSnap.isDead)) {
+                this.cameraController.setSpawn(selfSnap.position, selfSnap.rotationY);
+                this.inputManager.yaw = selfSnap.rotationY;
+                this.inputManager.pitch = 0;
+                this.hasSpawned = true;
+              }
+            }
+            this.wasDead = selfSnap.isDead;
           }
           break;
         }

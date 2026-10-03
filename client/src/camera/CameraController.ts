@@ -13,7 +13,7 @@ export class CameraController {
   public isCrouching: boolean = false;
   public isSprinting: boolean = false;
   public isMoving: boolean = false;
-  public isGrounded: boolean = true;
+  public isGrounded: boolean = false;
   public isZoomed: boolean = false;
 
   private currentEyeHeight: number = GAME_CONSTANTS.HEAD_HEIGHT_STANDING;
@@ -39,6 +39,8 @@ export class CameraController {
     this.velocity.set(0, 0, 0);
     this.yaw = rotY;
     this.pitch = 0;
+    const groundY = this.worldBuilder.getGroundHeight(this.position, GAME_CONSTANTS.PLAYER_RADIUS);
+    this.isGrounded = this.position.y <= groundY + 0.05;
     this.updateCameraTransform();
   }
 
@@ -106,6 +108,20 @@ export class CameraController {
     this.velocity.z = THREE.MathUtils.damp(this.velocity.z, targetVelZ, accelRate, delta);
 
     // 4. Vertical velocity, Jump & Gravity
+    const playerHeight = this.isCrouching
+      ? GAME_CONSTANTS.HEAD_HEIGHT_CROUCHING
+      : GAME_CONSTANTS.HEAD_HEIGHT_STANDING;
+
+    const currentGroundY = this.worldBuilder.getGroundHeight(
+      this.position,
+      GAME_CONSTANTS.PLAYER_RADIUS
+    );
+
+    // If player is in the air above ground level, unground them immediately
+    if (this.position.y > currentGroundY + 0.05) {
+      this.isGrounded = false;
+    }
+
     if (this.isGrounded && moveInput.isJumping) {
       this.velocity.y = GAME_CONSTANTS.JUMP_FORCE;
       this.isGrounded = false;
@@ -120,22 +136,59 @@ export class CameraController {
     this.position.y += this.velocity.y * delta;
     this.position.z += this.velocity.z * delta;
 
-    // 6. Ground detection & floor collision
-    if (this.position.y <= 0) {
-      this.position.y = 0;
+    // Overhead ceiling collision check: prevent jumping through overhead bottoms
+    if (this.velocity.y > 0) {
+      const headY = this.position.y + playerHeight;
+      for (const b of this.worldBuilder.obstacles) {
+        if (
+          this.position.x >= b.min[0] &&
+          this.position.x <= b.max[0] &&
+          this.position.z >= b.min[2] &&
+          this.position.z <= b.max[2]
+        ) {
+          if (headY >= b.min[1] && this.position.y < b.min[1]) {
+            this.position.y = Math.max(0, b.min[1] - playerHeight);
+            this.velocity.y = 0;
+            break;
+          }
+        }
+      }
+    }
+
+    // 6. Ground & obstacle top landing detection (when falling or stationary)
+    const landingGroundY = this.worldBuilder.getGroundHeight(
+      this.position,
+      GAME_CONSTANTS.PLAYER_RADIUS
+    );
+
+    if (this.velocity.y <= 0 && this.position.y <= landingGroundY) {
+      this.position.y = landingGroundY;
       this.velocity.y = 0;
       this.isGrounded = true;
     }
 
-    // 7. Obstacle collision resolution (cylinder vs map boxes)
+    // 7. Obstacle lateral collision resolution (cylinder vs map boxes)
     const resolved = this.worldBuilder.resolveCollision(
       this.position,
       GAME_CONSTANTS.PLAYER_RADIUS,
-      this.isCrouching ? GAME_CONSTANTS.HEAD_HEIGHT_CROUCHING : GAME_CONSTANTS.HEAD_HEIGHT_STANDING
+      playerHeight
     );
     this.position.x = resolved.x;
-    this.position.y = resolved.y;
     this.position.z = resolved.z;
+
+    // Re-verify ground height after lateral resolution
+    const finalGroundY = this.worldBuilder.getGroundHeight(
+      this.position,
+      GAME_CONSTANTS.PLAYER_RADIUS
+    );
+
+    if (this.velocity.y <= 0 && this.position.y <= finalGroundY) {
+      this.position.y = finalGroundY;
+      this.velocity.y = 0;
+      this.isGrounded = true;
+    } else if (this.position.y > finalGroundY + 0.05) {
+      this.isGrounded = false;
+    }
 
     // 8. Eye height interpolation (standing vs crouching)
     const targetHeight = this.isCrouching

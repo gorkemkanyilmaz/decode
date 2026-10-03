@@ -104,12 +104,43 @@ export class WorldBuilder {
   }
 
   /**
+   * Calculates the walkable ground height under a given position,
+   * accounting for the base floor (y=0) and all obstacle top surfaces.
+   */
+  public getGroundHeight(
+    pos: THREE.Vector3,
+    radius: number = 0.42
+  ): number {
+    let groundY = 0.0; // Base ground level
+    const margin = radius * 0.2;
+
+    for (const b of this.obstacles) {
+      // Check horizontal footprint overlap
+      if (
+        pos.x >= b.min[0] - margin &&
+        pos.x <= b.max[0] + margin &&
+        pos.z >= b.min[2] - margin &&
+        pos.z <= b.max[2] + margin
+      ) {
+        // Surface is eligible as ground if at or below feet (with 0.35m landing tolerance)
+        if (b.max[1] <= pos.y + 0.35) {
+          if (b.max[1] > groundY) {
+            groundY = b.max[1];
+          }
+        }
+      }
+    }
+
+    return groundY;
+  }
+
+  /**
    * Resolves player cylinder-box collisions against all map obstacles
    */
   public resolveCollision(
     pos: THREE.Vector3,
     radius: number = 0.45,
-    height: number = 1.6
+    height: number = 1.65
   ): { x: number; y: number; z: number } {
     const result = pos.clone();
 
@@ -120,12 +151,21 @@ export class WorldBuilder {
 
     const pMinY = result.y;
     const pMaxY = result.y + height;
+    const stepTolerance = 0.25;
 
     for (const b of this.obstacles) {
-      // Check vertical overlap
-      if (pMaxY < b.min[1] || pMinY > b.max[1]) continue;
+      // 1. If player's feet are on or above the obstacle's top surface,
+      // it is a walkable floor, NOT a vertical lateral wall!
+      if (pMinY >= b.max[1] - stepTolerance) {
+        continue;
+      }
 
-      // Find closest point on AABB to cylinder center
+      // 2. If player's head is below the underside of this obstacle (e.g. overhead beam/canopy)
+      if (pMaxY <= b.min[1] + 0.05) {
+        continue;
+      }
+
+      // 3. Otherwise, obstacle overlaps vertically with player body: resolve cylinder vs AABB
       const closestX = Math.max(b.min[0], Math.min(result.x, b.max[0]));
       const closestZ = Math.max(b.min[2], Math.min(result.z, b.max[2]));
 

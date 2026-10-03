@@ -34,7 +34,7 @@ export const GAME_CONSTANTS = {
   AIR_ACCELERATION: 5.0, // In-air maneuverability
   TURN_SPEED: 12.0, // Remote player rotation slerp speed
   GRAVITY: 22.0, // Grounded gravity (m/s^2)
-  JUMP_FORCE: 7.0, // Crisp jump impulse
+  JUMP_FORCE: 8.2, // Crisp jump impulse with clean obstacle clearance (1.5m)
   CAMERA_SENSITIVITY: 0.0022,
 
   // Elimination rules
