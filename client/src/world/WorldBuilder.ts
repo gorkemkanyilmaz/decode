@@ -1,13 +1,23 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MAP_OBJECTS, COLLISION_OBSTACLES } from '@shared/constants/mapLayout';
 import { MapObjectDefinition, BoundingBox } from '@shared/types/game';
 import { ProceduralProps } from './ProceduralProps';
+
+interface ObstacleBinding {
+  holder: THREE.Group;
+  def: MapObjectDefinition;
+  proceduralMesh: THREE.Group | null;
+}
 
 export class WorldBuilder {
   public scene: THREE.Scene;
   public mapGroup: THREE.Group;
   public obstacles: BoundingBox[] = [...COLLISION_OBSTACLES];
   private dirLight!: THREE.DirectionalLight;
+  private gltfLoader: GLTFLoader = new GLTFLoader();
+  private obstacleBindings: Map<string, ObstacleBinding> = new Map();
+  private loadedGlbCache: Map<string, THREE.Group> = new Map();
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -16,6 +26,7 @@ export class WorldBuilder {
 
     this.setupLighting();
     this.buildMap();
+    this.loadReal3DAssets();
   }
 
   private setupLighting(): void {
@@ -55,7 +66,7 @@ export class WorldBuilder {
     const floor = ProceduralProps.createFloor(100);
     this.mapGroup.add(floor);
 
-    // 2. Instantiate all defined map objects
+    // 2. Instantiate all defined map objects with holders for dynamic GLB upgrading
     for (const obj of MAP_OBJECTS) {
       let meshGroup: THREE.Group | null = null;
       const [w, h, d] = obj.scale;
@@ -95,10 +106,106 @@ export class WorldBuilder {
           break;
       }
 
+      const holder = new THREE.Group();
       if (meshGroup) {
-        meshGroup.position.set(obj.position[0], obj.position[1], obj.position[2]);
-        meshGroup.rotation.set(obj.rotation[0], obj.rotation[1], obj.rotation[2]);
-        this.mapGroup.add(meshGroup);
+        holder.add(meshGroup);
+      }
+      holder.position.set(obj.position[0], obj.position[1], obj.position[2]);
+      holder.rotation.set(obj.rotation[0], obj.rotation[1], obj.rotation[2]);
+      this.mapGroup.add(holder);
+
+      this.obstacleBindings.set(obj.id, {
+        holder,
+        def: obj,
+        proceduralMesh: meshGroup
+      });
+    }
+  }
+
+  /**
+   * Loads authentic GLB 3D assets asynchronously and upgrades map obstacles
+   */
+  private loadReal3DAssets(): void {
+    const assetsToLoad: { key: string; url: string }[] = [
+      { key: 'crate', url: '/assets/models/crate.glb' },
+      { key: 'crate_large', url: '/assets/models/crate_large.glb' },
+      { key: 'barrel', url: '/assets/models/barrel.glb' },
+      { key: 'tree', url: '/assets/models/tree.glb' },
+      { key: 'tree_tall', url: '/assets/models/tree_tall.glb' },
+      { key: 'rock_a', url: '/assets/models/rock_a.glb' },
+      { key: 'rock_b', url: '/assets/models/rock_b.glb' },
+      { key: 'barrier', url: '/assets/models/barrier.glb' },
+      { key: 'building', url: '/assets/models/building_a.glb' }
+    ];
+
+    for (const asset of assetsToLoad) {
+      this.gltfLoader.load(
+        asset.url,
+        (gltf) => {
+          gltf.scene.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+              child.castShadow = true;
+              child.receiveShadow = true;
+            }
+          });
+
+          this.loadedGlbCache.set(asset.key, gltf.scene);
+          this.upgradeObstaclesWithModel(asset.key, gltf.scene);
+        },
+        undefined,
+        (err) => {
+          console.warn(`[WorldBuilder] GLB fallback for ${asset.key}:`, err);
+        }
+      );
+    }
+  }
+
+  private upgradeObstaclesWithModel(key: string, baseModel: THREE.Group): void {
+    for (const binding of this.obstacleBindings.values()) {
+      const def = binding.def;
+      let matches = false;
+
+      if (key === 'crate' && def.type === 'crate' && Math.max(def.scale[0], def.scale[2]) <= 1.25) {
+        matches = true;
+      } else if (key === 'crate_large' && (def.type === 'crate_stack' || (def.type === 'crate' && Math.max(def.scale[0], def.scale[2]) > 1.25))) {
+        matches = true;
+      } else if (key === 'tree' && def.type === 'tree' && def.id.includes('foliage') && def.scale[1] <= 3.0) {
+        matches = true;
+      } else if (key === 'tree_tall' && def.type === 'tree' && def.id.includes('foliage') && def.scale[1] > 3.0) {
+        matches = true;
+      } else if (key === 'rock_a' && def.type === 'rock' && !def.id.endsWith('_2')) {
+        matches = true;
+      } else if (key === 'rock_b' && def.type === 'rock' && def.id.endsWith('_2')) {
+        matches = true;
+      } else if (key === 'barrier' && def.type === 'barrier') {
+        matches = true;
+      } else if (key === 'building' && def.type === 'building' && !def.id.includes('center')) {
+        matches = true;
+      } else if (key === 'barrel' && def.type === 'pillar') {
+        matches = true;
+      }
+
+      if (matches) {
+        const clone = baseModel.clone(true);
+        const [w, h, d] = def.scale;
+
+        // Scale clone to match exact obstacle dimensions
+        const bbox = new THREE.Box3().setFromObject(clone);
+        const size = new THREE.Vector3();
+        bbox.getSize(size);
+
+        if (size.x > 0.001 && size.y > 0.001 && size.z > 0.001) {
+          clone.scale.set(w / size.x, h / size.y, d / size.z);
+          const adjBbox = new THREE.Box3().setFromObject(clone);
+          const center = new THREE.Vector3();
+          adjBbox.getCenter(center);
+          clone.position.x -= center.x;
+          clone.position.y -= center.y;
+          clone.position.z -= center.z;
+        }
+
+        binding.holder.clear();
+        binding.holder.add(clone);
       }
     }
   }

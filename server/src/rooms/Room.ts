@@ -156,7 +156,7 @@ export class Room {
    */
   public handleEliminationAttempt(attackerId: string, targetId: string, guessedNumber: string): void {
     const attacker = this.players.get(attackerId);
-    const target = this.players.get(targetId);
+    let target = this.players.get(targetId);
 
     if (!attacker || !target) return;
 
@@ -216,6 +216,31 @@ export class Room {
       return;
     }
 
+    // Target resolution: If targetId is not specified or ambiguous, match any active opponent with this number
+    if (!target) {
+      for (const p of this.players.values()) {
+        if (p.id !== attacker.id && !p.isDead && p.secretNumber === guessedNumber) {
+          if (this.gameMode !== 'team_hunt' || p.team !== attacker.team) {
+            target = p;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!target) {
+      // Guessed number matches nobody
+      attacker.score = Math.max(0, attacker.score + GAME_CONSTANTS.SCORE_PENALTY_WRONG_GUESS);
+      attacker.applyCooldown(GAME_CONSTANTS.WRONG_GUESS_COOLDOWN_SEC);
+      attacker.send({
+        type: 'ELIMINATION_REJECTED',
+        reason: 'wrong_number',
+        cooldownSeconds: GAME_CONSTANTS.WRONG_GUESS_COOLDOWN_SEC,
+        message: 'Invalid 4-digit code.'
+      });
+      return;
+    }
+
     // Check spawn protection
     if (target.isSpawnProtected()) {
       attacker.send({
@@ -223,53 +248,6 @@ export class Room {
         reason: 'spawn_protected',
         cooldownSeconds: 1,
         message: 'Target is currently under spawn shield.'
-      });
-      return;
-    }
-
-    // Validate Distance
-    const attackerEye = attacker.getHeadPosition();
-    const targetHead = target.getHeadPosition();
-    const dist = v3Distance(attackerEye, targetHead);
-
-    if (dist > GAME_CONSTANTS.MAX_READING_DISTANCE) {
-      attacker.send({
-        type: 'ELIMINATION_REJECTED',
-        reason: 'out_of_range',
-        cooldownSeconds: 2,
-        message: 'Target too far to decode forehead.'
-      });
-      return;
-    }
-
-    // Validate Line of Sight through map obstacles + smoke clouds
-    const smokeObstacles: BoundingBox[] = this.activeGadgets
-      .filter((g) => g.type === 'smoke')
-      .map((g) => ({
-        min: [g.position[0] - g.radius, g.position[1], g.position[2] - g.radius],
-        max: [g.position[0] + g.radius, g.position[1] + g.radius, g.position[2] + g.radius]
-      }));
-
-    const allObstacles = [...COLLISION_OBSTACLES, ...smokeObstacles];
-    const hasLOS = isLineOfSightClear(attackerEye, targetHead, allObstacles);
-    if (!hasLOS) {
-      attacker.send({
-        type: 'ELIMINATION_REJECTED',
-        reason: 'not_visible',
-        cooldownSeconds: 2,
-        message: 'No line of sight on target forehead.'
-      });
-      return;
-    }
-
-    // Validate target forehead is facing viewer
-    const isFacing = isForeheadFacingViewer(v3FromArray(target.position), target.rotationY, attackerEye);
-    if (!isFacing) {
-      attacker.send({
-        type: 'ELIMINATION_REJECTED',
-        reason: 'not_visible',
-        cooldownSeconds: 2,
-        message: 'Target forehead is turned away.'
       });
       return;
     }
@@ -315,6 +293,15 @@ export class Room {
   ): void {
     const player = this.players.get(playerId);
     if (!player || player.isDead || this.state !== 'PLAYING') return;
+
+    // Check 15-second cooldown for tactical deployment gadgets (smoke, flash, camera)
+    if (gadget === 'smoke' || gadget === 'flash' || gadget === 'camera') {
+      const cd = player.canUseGadget(gadget);
+      if (!cd.can) {
+        return; // Reject spam while cooling down
+      }
+      player.setGadgetCooldown(gadget, GAME_CONSTANTS.GADGET_COOLDOWN_SEC);
+    }
 
     const id = `gadget_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const pos: [number, number, number] = targetPosition || [

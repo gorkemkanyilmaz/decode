@@ -39,6 +39,7 @@ export class ServerPlayer {
 
   // Anti-spam & Cooldowns
   public cooldownUntil: number = 0;
+  public gadgetCooldowns: Map<string, number> = new Map();
   public lastInputSeq: number = 0;
   public lastPingTimestamp: number = Date.now();
 
@@ -91,6 +92,19 @@ export class ServerPlayer {
 
   public applyCooldown(seconds: number): void {
     this.cooldownUntil = Date.now() + seconds * 1000;
+  }
+
+  public canUseGadget(gadget: string): { can: boolean; remainingSec: number } {
+    const until = this.gadgetCooldowns.get(gadget) || 0;
+    const now = Date.now();
+    if (now < until) {
+      return { can: false, remainingSec: Math.ceil((until - now) / 1000) };
+    }
+    return { can: true, remainingSec: 0 };
+  }
+
+  public setGadgetCooldown(gadget: string, seconds: number = 15.0): void {
+    this.gadgetCooldowns.set(gadget, Date.now() + seconds * 1000);
   }
 
   public kill(): void {

@@ -80,6 +80,71 @@ export class ParticleSystem {
     }, durationSec * 1000);
   }
 
+  public spawnFlashEffect(pos: [number, number, number], radius: number = 16.0): void {
+    // 1. High-intensity momentary light burst
+    const flashLight = new THREE.PointLight(0xffffff, 25, radius, 1.5);
+    flashLight.position.set(pos[0], pos[1] + 1.2, pos[2]);
+    this.scene.add(flashLight);
+
+    // 2. Bright blinding center sphere
+    const sphereGeo = new THREE.SphereGeometry(1.2, 16, 16);
+    const sphereMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.95
+    });
+    const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+    sphereMesh.position.set(pos[0], pos[1] + 1.2, pos[2]);
+    this.scene.add(sphereMesh);
+
+    // 3. High-velocity white/cyan sparks
+    const count = 45;
+    const sparkGeo = new THREE.BoxGeometry(0.08, 0.08, 0.25);
+    const sparkMat = new THREE.MeshBasicMaterial({ color: 0xe0f2fe });
+
+    for (let i = 0; i < count; i++) {
+      const spark = new THREE.Mesh(sparkGeo, sparkMat);
+      spark.position.set(pos[0], pos[1] + 1.2, pos[2]);
+
+      const theta = Math.random() * Math.PI * 2;
+      const phi = (Math.random() - 0.5) * Math.PI;
+      const speed = 12 + Math.random() * 14;
+
+      const velocity = new THREE.Vector3(
+        Math.cos(theta) * Math.cos(phi) * speed,
+        Math.sin(phi) * speed + 3,
+        Math.sin(theta) * Math.cos(phi) * speed
+      );
+      spark.lookAt(spark.position.clone().add(velocity));
+
+      this.scene.add(spark);
+      this.particles.push({
+        mesh: spark,
+        velocity,
+        life: 0,
+        maxLife: 0.45 + Math.random() * 0.3,
+        initialScale: 1.0
+      });
+    }
+
+    // Fade and remove light and sphere
+    let elapsed = 0;
+    const fadeTimer = setInterval(() => {
+      elapsed += 0.04;
+      flashLight.intensity = Math.max(0, 25 * (1 - elapsed / 0.45));
+      sphereMesh.scale.addScalar(0.4);
+      sphereMat.opacity = Math.max(0, 0.95 * (1 - elapsed / 0.35));
+
+      if (elapsed >= 0.45) {
+        clearInterval(fadeTimer);
+        this.scene.remove(flashLight);
+        this.scene.remove(sphereMesh);
+        sphereGeo.dispose();
+        sphereMat.dispose();
+      }
+    }, 40);
+  }
+
   public update(delta: number): void {
     // Update bursting particles
     for (let i = this.particles.length - 1; i >= 0; i--) {

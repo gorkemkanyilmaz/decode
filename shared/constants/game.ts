@@ -53,6 +53,7 @@ export const GAME_CONSTANTS = {
   FLASH_RADIUS: 16.0,
   FLASH_DURATION_SEC: 4.5,
   CAMERA_DURATION_SEC: 5.0,
+  GADGET_COOLDOWN_SEC: 15.0, // 15-second cooldown for flash, smoke, camera
 
   // Scoring
   SCORE_PER_ELIMINATION: 100,

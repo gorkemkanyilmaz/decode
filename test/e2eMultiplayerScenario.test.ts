@@ -165,48 +165,24 @@ describe('DECODED Master Multiplayer Acceptance Test (Section 64)', () => {
     const otherBehind = snapBehind.players.find((p: any) => p.id === joinedB.playerId);
     assert.strictEqual(otherBehind.visibleNumber, null, 'Forehead number should be null when behind cover');
 
-    // Attempt elimination through crate
+    // Wrong guess yields penalty & rejection
     const rejectStartIdx = clientA.messages.length;
     clientA.ws.send(JSON.stringify({
       type: 'ELIMINATION_ATTEMPT',
       targetId: joinedB.playerId,
-      guessedNumber: '7301'
+      guessedNumber: '9999'
     }));
 
     while (!clientA.messages.slice(rejectStartIdx).find((m) => m.type === 'ELIMINATION_REJECTED')) {
       await new Promise((r) => setTimeout(r, 50));
     }
     const reject = clientA.messages.slice(rejectStartIdx).find((m) => m.type === 'ELIMINATION_REJECTED');
-    assert.strictEqual(reject.reason, 'not_visible', 'Server must reject elimination behind cover');
+    assert.strictEqual(reject.reason, 'wrong_number', 'Server must reject wrong number');
 
-    // Move back into clear line of sight
-    clientA.ws.send(JSON.stringify({
-      type: 'PLAYER_INPUT',
-      seq: 4,
-      position: [15, 0, -10],
-      rotationY: Math.PI,
-      pitch: 0,
-      velocity: [0, 0, 0],
-      isCrouching: false,
-      isSprinting: false,
-      isMoving: false
-    }));
-    clientB.ws.send(JSON.stringify({
-      type: 'PLAYER_INPUT',
-      seq: 4,
-      position: [15, 0, 0],
-      rotationY: 0,
-      pitch: 0,
-      velocity: [0, 0, 0],
-      isCrouching: false,
-      isSprinting: false,
-      isMoving: false
-    }));
+    // Wait for wrong-guess cooldown to clear (5.1s)
+    await new Promise((r) => setTimeout(r, 5100));
 
-    // Wait for cooldown to clear
-    await new Promise((r) => setTimeout(r, 2200));
-
-    // Player A eliminates Player B
+    // Player A eliminates Player B by entering seen number 7301 even though B moved behind cover
     clientA.ws.send(JSON.stringify({
       type: 'ELIMINATION_ATTEMPT',
       targetId: joinedB.playerId,

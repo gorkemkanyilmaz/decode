@@ -101,7 +101,7 @@ describe('DECODED Room & Multiplayer Server Authority Tests', () => {
     room.destroy();
   });
 
-  it('rejects elimination if target is turned away', () => {
+  it('eliminates target once correct number is entered even if target is turned away', () => {
     const rm = new RoomManager();
     const ws1 = createMockSocket();
     const ws2 = createMockSocket();
@@ -120,11 +120,13 @@ describe('DECODED Room & Multiplayer Server Authority Tests', () => {
     p2.position = [15, 0, 0];
     p2.rotationY = Math.PI; // Target turned away (facing +Z, away from p1)
 
+    // Player enters seen 4-digit code: elimination must succeed!
     room.handleEliminationAttempt(p1.id, p2.id, '7301');
     const msg = ws1.getLastMessage();
-    assert.strictEqual(msg.type, 'ELIMINATION_REJECTED');
-    assert.strictEqual(msg.reason, 'not_visible');
-    assert.strictEqual(p2.isDead, false);
+    assert.strictEqual(msg.type, 'ELIMINATION_EVENT');
+    assert.strictEqual(msg.victimId, 'p2');
+    assert.strictEqual(p2.isDead, true);
+    assert.strictEqual(p1.kills, 1);
 
     room.destroy();
   });

@@ -210,6 +210,16 @@ export class Game {
             this.particleSystem.spawnSmoke(msg.id, msg.position, msg.duration, 6.0);
           } else if (msg.gadgetType === 'flash') {
             this.soundSystem.playGadgetFlash();
+            this.particleSystem.spawnFlashEffect(msg.position, GAME_CONSTANTS.FLASH_RADIUS);
+
+            // Check distance to player camera for blinding flash overlay
+            const camPos = this.cameraController.camera.position;
+            const flashPos = new THREE.Vector3(msg.position[0], msg.position[1], msg.position[2]);
+            const dist = camPos.distanceTo(flashPos);
+            if (dist <= GAME_CONSTANTS.FLASH_RADIUS) {
+              const intensity = Math.max(0.35, 1.0 - (dist / GAME_CONSTANTS.FLASH_RADIUS) * 0.65);
+              this.uiManager.triggerFlashbang(intensity, GAME_CONSTANTS.FLASH_DURATION_SEC);
+            }
           } else if (msg.gadgetType === 'camera' && msg.capturedNumber) {
             this.uiManager.showSpyCameraPhotoCard(msg.capturedNumber);
           }
@@ -304,6 +314,11 @@ export class Game {
       return;
     }
 
+    // Check 15-second cooldown
+    if (this.uiManager.isGadgetOnCooldown(gadget)) {
+      return;
+    }
+
     const camPos = this.cameraController.camera.position;
     const forward = this.cameraController.getForwardDirection();
     const targetPos: [number, number, number] = [
@@ -312,6 +327,7 @@ export class Game {
       camPos.z + forward.z * 5
     ];
 
+    this.uiManager.startGadgetCooldown(gadget, GAME_CONSTANTS.GADGET_COOLDOWN_SEC);
     this.networkManager.useGadget(gadget, targetPos);
   }
 

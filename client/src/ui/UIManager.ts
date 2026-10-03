@@ -30,6 +30,8 @@ export class UIManager {
   public onGadgetClick: ((gadget: GadgetType) => void) | null = null;
   public onQualityChange: ((quality: 'low' | 'medium' | 'high') => void) | null = null;
 
+  private gadgetCooldowns: Map<string, number> = new Map();
+
   constructor(sound: SoundSystem) {
     this.root = document.getElementById('ui-root')!;
     this.sound = sound;
@@ -480,8 +482,64 @@ export class UIManager {
     document.querySelectorAll('.gadget-slot').forEach((slot) => {
       slot.addEventListener('click', (e) => {
         const g = (e.currentTarget as HTMLElement).dataset.g as GadgetType;
+        if (this.isGadgetOnCooldown(g)) return;
         this.onGadgetClick?.(g);
       });
+    });
+  }
+
+  public isGadgetOnCooldown(g: GadgetType): boolean {
+    const until = this.gadgetCooldowns.get(g) || 0;
+    return Date.now() < until;
+  }
+
+  public startGadgetCooldown(g: GadgetType, seconds: number = 15): void {
+    const now = Date.now();
+    const until = now + seconds * 1000;
+    this.gadgetCooldowns.set(g, until);
+
+    const slot = document.querySelector(`.gadget-slot[data-g="${g}"]`);
+    if (!slot) return;
+
+    slot.classList.add('cooldown');
+    let badge = slot.querySelector('.gadget-cooldown-badge') as HTMLElement;
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.className = 'gadget-cooldown-badge';
+      slot.appendChild(badge);
+    }
+    badge.innerText = `${seconds}s`;
+
+    const interval = window.setInterval(() => {
+      const remainingMs = (this.gadgetCooldowns.get(g) || 0) - Date.now();
+      const remSec = Math.ceil(remainingMs / 1000);
+      if (remSec <= 0) {
+        clearInterval(interval);
+        slot.classList.remove('cooldown');
+        badge.remove();
+        this.gadgetCooldowns.delete(g);
+      } else {
+        badge.innerText = `${remSec}s`;
+      }
+    }, 250);
+  }
+
+  public triggerFlashbang(intensity: number, durationSec: number = 4.5): void {
+    let overlay = document.getElementById('flashbang-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'flashbang-overlay';
+      document.body.appendChild(overlay);
+    }
+
+    // Set instant full-white blinding opacity
+    overlay.style.transition = 'none';
+    overlay.style.opacity = Math.min(1.0, intensity).toString();
+
+    // Trigger smooth fade-out over duration
+    requestAnimationFrame(() => {
+      overlay!.style.transition = `opacity ${durationSec}s cubic-bezier(0.1, 0.7, 0.1, 1)`;
+      overlay!.style.opacity = '0';
     });
   }
 
