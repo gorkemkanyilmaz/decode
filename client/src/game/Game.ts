@@ -250,8 +250,8 @@ export class Game {
     this.inputManager.onDecodeToggle = () => {
       if (this.currentState === 'PLAYING') {
         const target = this.playerManager.getTargetInCrosshair(
-          this.cameraController.camera.position,
-          this.cameraController.getForwardDirection()
+          this.cameraController.camera,
+          this.worldBuilder.obstacles
         );
         this.uiManager.toggleKeypad(target?.id, target?.name);
       }
@@ -343,10 +343,10 @@ export class Game {
         );
       }
 
-      // Check crosshair target
+      // Check crosshair target using centralized VisibilitySystem
       const target = this.playerManager.getTargetInCrosshair(
-        this.cameraController.camera.position,
-        this.cameraController.getForwardDirection()
+        this.cameraController.camera,
+        this.worldBuilder.obstacles
       );
 
       this.uiManager.updateHUD(
@@ -358,8 +358,8 @@ export class Game {
       );
     }
 
-    // 2. Update Remote Players
-    this.playerManager.update(delta);
+    // 2. Update Remote Players (position interpolation, animations, 60 FPS visibility)
+    this.playerManager.update(delta, this.cameraController.camera, this.worldBuilder.obstacles);
 
     // 3. Update Particles
     this.particleSystem.update(delta);

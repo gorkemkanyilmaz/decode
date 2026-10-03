@@ -459,6 +459,7 @@ export class UIManager {
 
         <!-- Mobile Action Buttons -->
         <div class="mobile-action-buttons">
+          <button id="btn-mobile-sprint" class="mobile-action-btn interactive">SPRINT</button>
           <button id="btn-mobile-jump" class="mobile-action-btn interactive">JUMP</button>
           <button id="btn-mobile-crouch" class="mobile-action-btn interactive">CROUCH</button>
         </div>

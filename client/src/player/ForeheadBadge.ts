@@ -5,14 +5,16 @@ export class ForeheadBadge {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private texture: THREE.CanvasTexture;
-  private currentDisplayNumber: string | null = null;
+  private currentNumber: string = '';
   private isSelf: boolean = false;
 
   constructor(isSelf: boolean = false) {
     this.isSelf = isSelf;
     this.mesh = new THREE.Group();
+    // Hidden by default until visibility conditions are satisfied
+    this.mesh.visible = false;
 
-    // 256x96 dynamic canvas for high-DPI crisp digits
+    // 256x96 dynamic canvas for high-contrast crisp 4-digit typography
     this.canvas = document.createElement('canvas');
     this.canvas.width = 256;
     this.canvas.height = 96;
@@ -22,88 +24,101 @@ export class ForeheadBadge {
     this.texture.minFilter = THREE.LinearFilter;
     this.texture.magFilter = THREE.LinearFilter;
 
-    // Physical mounting plate
-    const plateGeo = new THREE.BoxGeometry(0.36, 0.14, 0.03);
+    // Physical mounting plate on forehead
+    const plateGeo = new THREE.BoxGeometry(0.30, 0.10, 0.02);
     const plateMat = new THREE.MeshStandardMaterial({
-      color: 0x0f172a,
-      roughness: 0.4,
+      color: 0x0a0f1d,
+      roughness: 0.35,
       metalness: 0.8
     });
     const plate = new THREE.Mesh(plateGeo, plateMat);
+    // Plate center is at origin, back sits against forehead at z = 0, front is at z = -0.01
+    plate.position.set(0, 0, 0);
     this.mesh.add(plate);
 
-    // Glowing front display surface
-    const screenGeo = new THREE.PlaneGeometry(0.34, 0.12);
+    // Glowing front display surface facing forward (-Z)
+    const screenGeo = new THREE.PlaneGeometry(0.28, 0.085);
     const screenMat = new THREE.MeshBasicMaterial({
       map: this.texture,
       transparent: true,
-      side: THREE.DoubleSide
+      side: THREE.FrontSide // Only readable from the front! Backface naturally culled
     });
     const screen = new THREE.Mesh(screenGeo, screenMat);
-    screen.position.z = 0.016;
+    // Face the front (-Z): PlaneGeometry default normal is +Z, so rotate by 180 deg around Y
+    screen.rotation.y = Math.PI;
+    screen.position.set(0, 0, -0.011);
     this.mesh.add(screen);
-
-    this.renderBadge('????');
   }
 
-  public setNumber(numberStr: string | null): void {
-    if (this.currentDisplayNumber === numberStr) return;
-    this.currentDisplayNumber = numberStr;
-    this.renderBadge(numberStr || '????');
+  /**
+   * Stores and renders the four-digit number onto the forehead texture
+   */
+  public setNumber(numberStr: string): void {
+    if (!numberStr || this.currentNumber === numberStr) return;
+    this.currentNumber = numberStr;
+    this.renderBadge(numberStr);
   }
 
-  private renderBadge(text: string): void {
+  public getNumber(): string {
+    return this.currentNumber;
+  }
+
+  /**
+   * Toggles visibility of the forehead number.
+   * There are ONLY two states: VISIBLE (4 digits) or NOT VISIBLE (nothing).
+   * NO "????" placeholder is ever displayed.
+   */
+  public setVisible(visible: boolean): void {
+    // Only display if visible is true AND we have a valid 4-digit number
+    this.mesh.visible = visible && this.currentNumber.length === 4;
+  }
+
+  public isVisible(): boolean {
+    return this.mesh.visible;
+  }
+
+  private renderBadge(digits: string): void {
     const w = this.canvas.width;
     const h = this.canvas.height;
-    const isRevealed = text !== '????';
 
-    // Clear
     this.ctx.clearRect(0, 0, w, h);
 
-    // Background rounded pill
-    this.ctx.fillStyle = isRevealed ? 'rgba(3, 10, 25, 0.95)' : 'rgba(15, 23, 42, 0.8)';
-    this.ctx.strokeStyle = isRevealed ? '#00F0FF' : 'rgba(100, 116, 139, 0.5)';
+    // High-contrast dark badge background with crisp glowing border
+    this.ctx.fillStyle = 'rgba(5, 12, 28, 0.95)';
+    this.ctx.strokeStyle = '#00F0FF';
     this.ctx.lineWidth = 4;
 
-    const r = 16;
+    const r = 12;
     this.ctx.beginPath();
-    this.ctx.roundRect(4, 4, w - 8, h - 8, r);
+    this.ctx.roundRect(3, 3, w - 6, h - 6, r);
     this.ctx.fill();
     this.ctx.stroke();
 
-    // Subtle digital matrix background grid
-    if (isRevealed) {
-      this.ctx.strokeStyle = 'rgba(0, 240, 255, 0.12)';
-      this.ctx.lineWidth = 1;
-      for (let x = 16; x < w; x += 16) {
-        this.ctx.beginPath();
-        this.ctx.moveTo(x, 4);
-        this.ctx.lineTo(x, h - 4);
-        this.ctx.stroke();
-      }
+    // Subtle tactical scanline accent
+    this.ctx.strokeStyle = 'rgba(0, 240, 255, 0.15)';
+    this.ctx.lineWidth = 1;
+    for (let y = 10; y < h; y += 12) {
+      this.ctx.beginPath();
+      this.ctx.moveTo(6, y);
+      this.ctx.lineTo(w - 6, y);
+      this.ctx.stroke();
     }
 
-    // Typography
+    // High-contrast, clean 4-digit typography
     this.ctx.font = '900 52px "JetBrains Mono", monospace';
     this.ctx.textAlign = 'center';
     this.ctx.textBaseline = 'middle';
 
-    if (isRevealed) {
-      // Glow effect
-      this.ctx.shadowColor = '#00F0FF';
-      this.ctx.shadowBlur = 12;
-      this.ctx.fillStyle = '#FFFFFF';
-      this.ctx.fillText(text, w / 2, h / 2 + 2);
+    // Outer glow
+    this.ctx.shadowColor = '#00F0FF';
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillStyle = '#FFFFFF';
+    this.ctx.fillText(digits, w / 2, h / 2 + 2);
 
-      // Inner vibrant cyan core
-      this.ctx.shadowBlur = 0;
-      this.ctx.fillStyle = '#00F0FF';
-      this.ctx.fillText(text, w / 2, h / 2 + 2);
-    } else {
-      this.ctx.shadowBlur = 0;
-      this.ctx.fillStyle = 'rgba(148, 163, 184, 0.4)';
-      this.ctx.fillText('????', w / 2, h / 2 + 2);
-    }
+    // Inner bright core
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillStyle = '#00F0FF';
+    this.ctx.fillText(digits, w / 2, h / 2 + 2);
 
     this.texture.needsUpdate = true;
   }

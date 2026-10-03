@@ -55,21 +55,29 @@ export class CameraController {
     pitch: number
   ): void {
     this.yaw = yaw;
-    this.pitch = pitch;
+
+    // Pitch limits: clamp between -80 deg and +80 deg (-1.40 to +1.40 rad)
+    const maxPitch = (Math.PI / 2) * 0.88;
+    this.pitch = Math.max(-maxPitch, Math.min(maxPitch, pitch));
+
     this.isCrouching = moveInput.isCrouching;
     this.isSprinting = moveInput.isSprinting && !this.isCrouching;
 
-    // Smooth FOV zoom (75 normal, 25 zoomed in binoculars)
+    // Smooth FOV zoom for binoculars
     const targetFov = this.isZoomed ? 25 : 75;
     this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, delta * 12);
     this.camera.updateProjectionMatrix();
 
-    // Determine current speed
-    let speed = GAME_CONSTANTS.SPEED_WALK;
-    if (this.isCrouching) speed = GAME_CONSTANTS.SPEED_CROUCH;
-    else if (this.isSprinting) speed = GAME_CONSTANTS.SPEED_SPRINT;
+    // 1. Determine target speed
+    let targetSpeed = GAME_CONSTANTS.WALK_SPEED;
+    if (this.isCrouching) {
+      targetSpeed = GAME_CONSTANTS.CROUCH_SPEED;
+    } else if (this.isSprinting) {
+      targetSpeed = GAME_CONSTANTS.RUN_SPEED;
+    }
 
-    // Movement direction relative to camera yaw
+    // 2. Compute desired movement direction relative to camera yaw
+    // In our coordinate system, forward is (-sin(yaw), 0, -cos(yaw))
     const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
 
@@ -77,17 +85,27 @@ export class CameraController {
       .addScaledVector(forward, moveInput.moveZ)
       .addScaledVector(right, moveInput.moveX);
 
-    this.isMoving = moveDir.lengthSq() > 0.001;
+    const inputMagnitude = Math.min(1.0, moveDir.length());
+    this.isMoving = inputMagnitude > 0.05;
+
+    let targetVelX = 0;
+    let targetVelZ = 0;
+
     if (this.isMoving) {
       moveDir.normalize();
-      this.velocity.x = moveDir.x * speed;
-      this.velocity.z = moveDir.z * speed;
-    } else {
-      this.velocity.x = THREE.MathUtils.lerp(this.velocity.x, 0, delta * 10);
-      this.velocity.z = THREE.MathUtils.lerp(this.velocity.z, 0, delta * 10);
+      targetVelX = moveDir.x * targetSpeed * inputMagnitude;
+      targetVelZ = moveDir.z * targetSpeed * inputMagnitude;
     }
 
-    // Jump & Gravity
+    // 3. Acceleration / Deceleration model
+    const accelRate = this.isGrounded
+      ? (this.isMoving ? GAME_CONSTANTS.ACCELERATION : GAME_CONSTANTS.DECELERATION)
+      : GAME_CONSTANTS.AIR_ACCELERATION;
+
+    this.velocity.x = THREE.MathUtils.damp(this.velocity.x, targetVelX, accelRate, delta);
+    this.velocity.z = THREE.MathUtils.damp(this.velocity.z, targetVelZ, accelRate, delta);
+
+    // 4. Vertical velocity, Jump & Gravity
     if (this.isGrounded && moveInput.isJumping) {
       this.velocity.y = GAME_CONSTANTS.JUMP_FORCE;
       this.isGrounded = false;
@@ -97,19 +115,19 @@ export class CameraController {
       this.velocity.y -= GAME_CONSTANTS.GRAVITY * delta;
     }
 
-    // Apply movement
+    // 5. Integrate position
     this.position.x += this.velocity.x * delta;
     this.position.y += this.velocity.y * delta;
     this.position.z += this.velocity.z * delta;
 
-    // Ground floor collision
+    // 6. Ground detection & floor collision
     if (this.position.y <= 0) {
       this.position.y = 0;
       this.velocity.y = 0;
       this.isGrounded = true;
     }
 
-    // Obstacle collision resolution
+    // 7. Obstacle collision resolution (cylinder vs map boxes)
     const resolved = this.worldBuilder.resolveCollision(
       this.position,
       GAME_CONSTANTS.PLAYER_RADIUS,
@@ -119,26 +137,31 @@ export class CameraController {
     this.position.y = resolved.y;
     this.position.z = resolved.z;
 
-    // Eye height lerp (standing vs crouching)
+    // 8. Eye height interpolation (standing vs crouching)
     const targetHeight = this.isCrouching
       ? GAME_CONSTANTS.HEAD_HEIGHT_CROUCHING
       : GAME_CONSTANTS.HEAD_HEIGHT_STANDING;
-    this.currentEyeHeight = THREE.MathUtils.lerp(this.currentEyeHeight, targetHeight, delta * 10);
+    this.currentEyeHeight = THREE.MathUtils.lerp(this.currentEyeHeight, targetHeight, delta * 12);
 
-    // Head bobbing & footsteps
+    // 9. Head bobbing & footsteps
     let bobOffset = 0;
-    if (this.isMoving && this.isGrounded) {
-      const bobSpeed = this.isSprinting ? 14 : 9;
-      this.headBobTimer += delta * bobSpeed;
-      bobOffset = Math.sin(this.headBobTimer) * (this.isSprinting ? 0.05 : 0.03);
+    const horizontalSpeed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
 
-      this.footstepTimer += delta * bobSpeed;
+    if (horizontalSpeed > 0.4 && this.isGrounded) {
+      // Cadence: scales with speed
+      const bobFreq = this.isSprinting ? 14.5 : 8.5;
+      const bobAmp = this.isSprinting ? 0.045 : 0.025;
+      this.headBobTimer += delta * bobFreq;
+      bobOffset = Math.sin(this.headBobTimer) * bobAmp;
+
+      this.footstepTimer += delta * bobFreq;
       if (this.footstepTimer >= Math.PI) {
         this.footstepTimer = 0;
         this.soundSystem.playFootstep(this.isSprinting);
       }
     } else {
       this.headBobTimer = 0;
+      this.footstepTimer = 0;
     }
 
     this.updateCameraTransform(bobOffset);
@@ -151,7 +174,7 @@ export class CameraController {
       this.position.z
     );
 
-    // Calculate rotation from yaw and pitch
+    // Apply pitch (X) and yaw (Y) in 'YXZ' order to guarantee no roll/tilt
     const euler = new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ');
     this.camera.quaternion.setFromEuler(euler);
   }

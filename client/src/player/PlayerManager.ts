@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { CharacterModel } from './CharacterModel';
-import { ClientPlayerSnapshot, PlayerPublicInfo } from '@shared/types/game';
+import { ClientPlayerSnapshot, PlayerPublicInfo, BoundingBox } from '@shared/types/game';
+import { VisibilitySystem } from '../systems/VisibilitySystem';
+import { GAME_CONSTANTS } from '@shared/constants/game';
 
 interface RemotePlayerData {
   model: CharacterModel;
@@ -14,7 +16,7 @@ interface RemotePlayerData {
   isCrouching: boolean;
   isDead: boolean;
   isSpawnProtected: boolean;
-  visibleNumber: string | null;
+  revealedNumber: string | null;
   name: string;
 }
 
@@ -38,13 +40,11 @@ export class PlayerManager {
       presentIds.add(snap.id);
 
       if (snap.id === this.localPlayerId) {
-        // Local player handled separately by camera/controller
         continue;
       }
 
       let remote = this.remotePlayers.get(snap.id);
       if (!remote) {
-        // Instantiate new character
         const info = playersPublicInfo.get(snap.id);
         const customization = info?.customization || {
           color: '#3B82F6',
@@ -68,14 +68,14 @@ export class PlayerManager {
           isCrouching: snap.isCrouching,
           isDead: snap.isDead,
           isSpawnProtected: snap.isSpawnProtected,
-          visibleNumber: snap.visibleNumber,
+          revealedNumber: snap.visibleNumber,
           name: info?.name || 'Agent'
         };
 
         this.remotePlayers.set(snap.id, remote);
       }
 
-      // Update interpolation targets
+      // Update movement targets
       remote.targetPos.set(snap.position[0], snap.position[1], snap.position[2]);
       remote.targetYaw = snap.rotationY;
       remote.pitch = snap.pitch;
@@ -84,13 +84,15 @@ export class PlayerManager {
       remote.isCrouching = snap.isCrouching;
       remote.isDead = snap.isDead;
       remote.isSpawnProtected = snap.isSpawnProtected;
-      remote.visibleNumber = snap.visibleNumber;
 
-      // Update forehead badge display
-      remote.model.foreheadBadge.setNumber(snap.visibleNumber);
+      // When the server sends a revealed number, update the forehead badge
+      if (snap.visibleNumber) {
+        remote.revealedNumber = snap.visibleNumber;
+        remote.model.setNumber(snap.visibleNumber);
+      }
     }
 
-    // Remove disconnected players
+    // Clean up disconnected players
     for (const [id, remote] of this.remotePlayers.entries()) {
       if (!presentIds.has(id)) {
         this.scene.remove(remote.model.group);
@@ -99,15 +101,18 @@ export class PlayerManager {
     }
   }
 
-  public update(delta: number): void {
-    const lerpFactor = Math.min(1.0, delta * 15);
+  /**
+   * Updates remote player positions, rotations, animations, and dynamic 60 FPS visibility
+   */
+  public update(delta: number, camera?: THREE.Camera, obstacles?: BoundingBox[]): void {
+    const lerpFactor = Math.min(1.0, delta * GAME_CONSTANTS.TURN_SPEED);
 
     for (const remote of this.remotePlayers.values()) {
-      // Position lerp
+      // 1. Position interpolation
       remote.currentPos.lerp(remote.targetPos, lerpFactor);
       remote.model.group.position.copy(remote.currentPos);
 
-      // Angle interpolation
+      // 2. Shortest-path yaw rotation
       let angleDiff = remote.targetYaw - remote.currentYaw;
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
@@ -116,6 +121,7 @@ export class PlayerManager {
       remote.model.group.rotation.y = remote.currentYaw;
       remote.model.headGroup.rotation.x = remote.pitch;
 
+      // 3. Grounded procedural animation (walk, run, lean, swing, breathing)
       remote.model.updateAnimation(
         delta,
         remote.isMoving,
@@ -124,26 +130,52 @@ export class PlayerManager {
         remote.isDead,
         remote.isSpawnProtected
       );
+
+      // 4. Client-side instantaneous visibility check (Section 47 & 48)
+      if (camera && obstacles) {
+        const isVisible = VisibilitySystem.isNumberVisible(
+          camera,
+          {
+            position: remote.currentPos,
+            rotationY: remote.currentYaw,
+            isCrouching: remote.isCrouching,
+            isDead: remote.isDead
+          },
+          obstacles
+        );
+
+        // Render the actual 4-digit number ONLY if visibility conditions are satisfied
+        // If not visible (turned away, behind crate, out of FOV, too far): NOTHING is shown (no ????)
+        remote.model.setNumberVisible(isVisible && remote.revealedNumber !== null);
+      }
     }
   }
 
   /**
-   * Finds the best opponent currently targeted by the player's crosshair (ray from camera forward)
+   * Finds the opponent currently in the player's crosshair cone
    */
   public getTargetInCrosshair(
-    cameraPos: THREE.Vector3,
-    cameraDir: THREE.Vector3,
-    maxDistance: number = 30
+    camera: THREE.PerspectiveCamera,
+    obstacles: BoundingBox[],
+    maxDistance: number = GAME_CONSTANTS.NUMBER_READ_DISTANCE
   ): { id: string; name: string; isForeheadVisible: boolean; dist: number } | null {
     let closestTarget: { id: string; name: string; isForeheadVisible: boolean; dist: number } | null = null;
-    let minAngle = 0.25; // within ~14 degrees cone of crosshair
+    let minAngle = 0.22; // ~12 degrees cone of crosshair
+
+    const cameraPos = camera.position;
+    const cameraDir = new THREE.Vector3();
+    camera.getWorldDirection(cameraDir);
 
     for (const [id, remote] of this.remotePlayers.entries()) {
       if (remote.isDead) continue;
 
+      const headHeight = remote.isCrouching
+        ? GAME_CONSTANTS.HEAD_HEIGHT_CROUCHING
+        : GAME_CONSTANTS.HEAD_HEIGHT_STANDING;
+
       const headPos = new THREE.Vector3(
         remote.currentPos.x,
-        remote.currentPos.y + (remote.isCrouching ? 1.05 : 1.65),
+        remote.currentPos.y + headHeight,
         remote.currentPos.z
       );
 
@@ -157,10 +189,23 @@ export class PlayerManager {
 
       if (angle < minAngle) {
         minAngle = angle;
+
+        const isForeheadVisible = VisibilitySystem.isNumberVisible(
+          camera,
+          {
+            position: remote.currentPos,
+            rotationY: remote.currentYaw,
+            isCrouching: remote.isCrouching,
+            isDead: remote.isDead
+          },
+          obstacles,
+          maxDistance
+        );
+
         closestTarget = {
           id,
           name: remote.name,
-          isForeheadVisible: remote.visibleNumber !== null,
+          isForeheadVisible,
           dist
         };
       }

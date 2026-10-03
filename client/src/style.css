@@ -755,9 +755,11 @@ body {
   justify-content: center;
 }
 
-.mobile-action-btn:active {
-  background: rgba(0, 240, 255, 0.3);
+.mobile-action-btn:active,
+.mobile-action-btn.active {
+  background: rgba(0, 240, 255, 0.35);
   border-color: var(--accent-cyan);
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.5);
 }
 
 /* Debug Overlay */

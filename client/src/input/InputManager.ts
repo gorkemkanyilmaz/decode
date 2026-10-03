@@ -24,6 +24,11 @@ export class InputManager {
   private lookTouchId: number | null = null;
   private lastLookTouch: { x: number; y: number } = { x: 0, y: 0 };
 
+  // Mobile action button states
+  public mobileSprinting: boolean = false;
+  public mobileCrouching: boolean = false;
+  public mobileJumping: boolean = false;
+
   // Callbacks
   public onDecodeToggle: (() => void) | null = null;
   public onGadgetUse: ((slot: number) => void) | null = null;
@@ -201,8 +206,51 @@ export class InputManager {
         }
       }
     };
-    lookZone.addEventListener('touchend', endLook);
-    lookZone.addEventListener('touchcancel', endLook);
+    // Action buttons for mobile
+    this.setupMobileActionButtons();
+  }
+
+  public setupMobileActionButtons(): void {
+    const sprintBtn = document.getElementById('btn-mobile-sprint');
+    const jumpBtn = document.getElementById('btn-mobile-jump');
+    const crouchBtn = document.getElementById('btn-mobile-crouch');
+
+    if (sprintBtn) {
+      sprintBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.mobileSprinting = !this.mobileSprinting;
+        sprintBtn.classList.toggle('active', this.mobileSprinting);
+      });
+      sprintBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        this.mobileSprinting = !this.mobileSprinting;
+        sprintBtn.classList.toggle('active', this.mobileSprinting);
+      }, { passive: false });
+    }
+
+    if (jumpBtn) {
+      jumpBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        this.mobileJumping = true;
+      }, { passive: false });
+      jumpBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        this.mobileJumping = false;
+      }, { passive: false });
+    }
+
+    if (crouchBtn) {
+      crouchBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.mobileCrouching = !this.mobileCrouching;
+        crouchBtn.classList.toggle('active', this.mobileCrouching);
+      });
+      crouchBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        this.mobileCrouching = !this.mobileCrouching;
+        crouchBtn.classList.toggle('active', this.mobileCrouching);
+      }, { passive: false });
+    }
   }
 
   public getMovementInput(): { moveX: number; moveZ: number; isSprinting: boolean; isCrouching: boolean; isJumping: boolean } {
@@ -227,9 +275,9 @@ export class InputManager {
       moveZ /= len;
     }
 
-    const isSprinting = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
-    const isCrouching = this.keys.has('KeyC') || this.keys.has('ControlLeft');
-    const isJumping = this.keys.has('Space');
+    const isSprinting = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.mobileSprinting;
+    const isCrouching = this.keys.has('KeyC') || this.keys.has('ControlLeft') || this.mobileCrouching;
+    const isJumping = this.keys.has('Space') || this.mobileJumping;
 
     return { moveX, moveZ, isSprinting, isCrouching, isJumping };
   }
