@@ -1,0 +1,29 @@
+{
+  "name": "decoded-3d-number-hunt",
+  "version": "1.0.0",
+  "description": "Multiplayer 3D Number Hunt - High-polish stealth party game in Three.js and WebSockets",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n \"SRV,CLI\" -c \"cyan,magenta\" \"npm run server\" \"npm run client\"",
+    "server": "tsx watch server/src/index.ts",
+    "client": "vite client --host 0.0.0.0 --port 3000",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "vite build client --outDir ../dist/client",
+    "build:server": "tsc -p server/tsconfig.json",
+    "test": "tsx --test test/**/*.test.ts"
+  },
+  "dependencies": {
+    "three": "^0.174.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "@types/three": "^0.174.0",
+    "@types/ws": "^8.5.14",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0"
+  }
+}
