@@ -18,11 +18,11 @@ export class NetworkManager {
     const envUrl = (import.meta as any).env?.VITE_WS_URL;
     if (envUrl) {
       this.url = envUrl;
+    } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      this.url = 'ws://localhost:3001';
     } else {
-      const host = window.location.hostname || 'localhost';
-      const port = 3001;
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      this.url = `${protocol}//${host}:${port}`;
+      // Production fallback directly to deployed Render WebSocket server
+      this.url = 'wss://decode-server.onrender.com';
     }
   }
 
