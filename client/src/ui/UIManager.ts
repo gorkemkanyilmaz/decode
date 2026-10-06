@@ -399,11 +399,12 @@ export class UIManager {
     });
 
     document.getElementById('btn-confirm-number')?.addEventListener('click', () => {
-      if (chosen.length === 4) {
-        clearInterval(interval);
-        this.sound.playKeypadClick(9);
-        this.onNumberSelected?.(chosen);
+      while (chosen.length < 4) {
+        chosen += Math.floor(Math.random() * 10).toString();
       }
+      clearInterval(interval);
+      this.sound.playKeypadClick(9);
+      this.onNumberSelected?.(chosen);
     });
   }
 

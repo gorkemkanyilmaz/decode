@@ -21,7 +21,10 @@ export class InputManager {
   private moveJoystickStart: { x: number; y: number } = { x: 0, y: 0 };
   private moveVector: { x: number; z: number } = { x: 0, z: 0 };
 
-  private lookTouchId: number | null = null;
+  // Right Look/Rotation Joystick state
+  private lookJoystickActive: boolean = false;
+  private lookJoystickTouchId: number | null = null;
+  private lookVector: { x: number; y: number } = { x: 0, y: 0 };
   private lastLookTouch: { x: number; y: number } = { x: 0, y: 0 };
 
   // Mobile action button states
@@ -227,45 +230,121 @@ export class InputManager {
       window.addEventListener('mouseup', onMouseUp);
     });
 
-    // Right Look Zone
-    lookZone.addEventListener('touchstart', (e) => {
-      const touch = e.changedTouches[0];
-      if (this.lookTouchId === null) {
-        this.lookTouchId = touch.identifier;
-        this.lastLookTouch = { x: touch.clientX, y: touch.clientY };
+    // Right Look / Rotation Joystick Zone
+    const lookBase = document.getElementById('joystick-look-base');
+    const lookThumb = document.getElementById('joystick-look-thumb');
+
+    const getLookCenter = () => {
+      if (!lookBase) return { x: window.innerWidth - 80, y: window.innerHeight - 80 };
+      const rect = lookBase.getBoundingClientRect();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2
+      };
+    };
+
+    let lookCenter = { x: window.innerWidth - 80, y: window.innerHeight - 80 };
+
+    const startLook = (clientX: number, clientY: number, id: number | null) => {
+      this.lookJoystickActive = true;
+      this.lookJoystickTouchId = id;
+      this.lastLookTouch = { x: clientX, y: clientY };
+      lookCenter = getLookCenter();
+      processLook(clientX, clientY);
+    };
+
+    const processLook = (clientX: number, clientY: number) => {
+      if (!this.lookJoystickActive) return;
+
+      const dx = clientX - lookCenter.x;
+      const dy = clientY - lookCenter.y;
+      const maxDist = 44;
+      const actualDist = Math.sqrt(dx * dx + dy * dy);
+      const clampedDist = Math.min(maxDist, actualDist);
+      const angle = Math.atan2(dy, dx);
+
+      const thumbX = Math.cos(angle) * clampedDist;
+      const thumbY = Math.sin(angle) * clampedDist;
+
+      if (lookThumb) {
+        lookThumb.style.left = `calc(50% + ${thumbX}px)`;
+        lookThumb.style.top = `calc(50% + ${thumbY}px)`;
       }
-    }, { passive: true });
 
-    lookZone.addEventListener('touchmove', (e) => {
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        const touch = e.changedTouches[i];
-        if (touch.identifier === this.lookTouchId) {
-          const dx = touch.clientX - this.lastLookTouch.x;
-          const dy = touch.clientY - this.lastLookTouch.y;
-          this.lastLookTouch = { x: touch.clientX, y: touch.clientY };
+      // Normalized look deflection vector for continuous rotation
+      this.lookVector = {
+        x: thumbX / maxDist,
+        y: thumbY / maxDist
+      };
+    };
 
-          const sensitivity = 0.004;
-          this.yaw -= dx * sensitivity;
-          this.pitch -= dy * sensitivity;
-
-          const maxPitch = (Math.PI / 2) * 0.95;
-          this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
-          break;
-        }
-      }
-    }, { passive: true });
-
-    const endLook = (e: TouchEvent) => {
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        if (e.changedTouches[i].identifier === this.lookTouchId) {
-          this.lookTouchId = null;
-          break;
-        }
+    const endLook = () => {
+      this.lookJoystickActive = false;
+      this.lookJoystickTouchId = null;
+      this.lookVector = { x: 0, y: 0 };
+      if (lookThumb) {
+        lookThumb.style.left = '50%';
+        lookThumb.style.top = '50%';
       }
     };
 
-    lookZone.addEventListener('touchend', endLook);
-    lookZone.addEventListener('touchcancel', endLook);
+    lookZone.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const touch = e.changedTouches[0];
+      startLook(touch.clientX, touch.clientY, touch.identifier);
+    }, { passive: false });
+
+    lookZone.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (!this.lookJoystickActive) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        if (touch.identifier === this.lookJoystickTouchId) {
+          processLook(touch.clientX, touch.clientY);
+          break;
+        }
+      }
+    }, { passive: false });
+
+    lookZone.addEventListener('touchend', (e) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === this.lookJoystickTouchId) {
+          endLook();
+          break;
+        }
+      }
+    });
+
+    lookZone.addEventListener('touchcancel', () => {
+      endLook();
+    });
+
+    // Mouse fallback for right joystick
+    lookZone.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      startLook(e.clientX, e.clientY, null);
+      const onMouseMove = (me: MouseEvent) => processLook(me.clientX, me.clientY);
+      const onMouseUp = () => {
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+        endLook();
+      };
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    });
+  }
+
+  public update(delta: number): void {
+    if (this.lookJoystickActive) {
+      // Rotate camera smoothly based on right joystick deflection
+      const turnSpeed = 2.8; // radians per second for yaw
+      const pitchSpeed = 1.9; // radians per second for pitch
+      this.yaw -= this.lookVector.x * turnSpeed * delta;
+      this.pitch -= this.lookVector.y * pitchSpeed * delta;
+
+      const maxPitch = (Math.PI / 2) * 0.95;
+      this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
+    }
   }
 
   public setupMobileActionButtons(): void {

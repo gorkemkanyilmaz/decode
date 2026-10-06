@@ -837,11 +837,20 @@ body {
   display: none !important;
 }
 
+.look-joystick-base {
+  display: none;
+}
+
 /* =========================================================
    Mobile Viewport Responsive Layout (max-width: 768px)
    Eliminates all overlapping elements on small screens
    ========================================================= */
 @media (max-width: 768px) {
+  /* Hide minimap on mobile per user request; replaced by right rotation joystick */
+  #minimap-container {
+    display: none !important;
+  }
+
   /* Compact Top HUD Bar */
   .hud-top-bar {
     top: 8px;
@@ -865,7 +874,7 @@ body {
     padding: 2px 6px;
   }
 
-  /* Gadgets Hotbar: Relocated cleanly to top-center below HUD */
+  /* Gadgets Hotbar: Keep ONLY Smoke on mobile; hide Flash, Camera, Zoom */
   .hud-gadgets-bar {
     bottom: auto;
     top: 62px;
@@ -874,10 +883,21 @@ body {
     gap: 8px;
   }
 
-  .gadget-slot {
-    width: 42px;
-    height: 42px;
-    border-radius: 10px;
+  .gadget-slot[data-g="flash"],
+  .gadget-slot[data-g="camera"],
+  .gadget-slot[data-g="binoculars"] {
+    display: none !important;
+  }
+
+  .gadget-slot[data-g="smoke"] {
+    width: 82px;
+    height: 38px;
+    border-radius: 20px;
+    flex-direction: row;
+    gap: 6px;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1.5px solid var(--accent-cyan);
+    box-shadow: 0 0 16px rgba(0, 240, 255, 0.4);
   }
 
   .gadget-key-label {
@@ -885,14 +905,37 @@ body {
   }
 
   .gadget-name {
-    font-size: 0.65rem;
+    font-size: 0.75rem;
+    color: #e0f2fe;
   }
 
-  /* Dedicated DECODE Button on Mobile: Sits directly above the minimap */
+  /* Right Look / Rotation Virtual Joystick on Mobile */
+  .look-joystick-base {
+    position: absolute;
+    display: block !important;
+    right: 80px;
+    bottom: 80px;
+    left: auto;
+    transform: translate(50%, 50%);
+    border-color: rgba(168, 85, 247, 0.5);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), inset 0 0 16px rgba(168, 85, 247, 0.2);
+  }
+
+  .look-joystick-base::after {
+    border-color: rgba(168, 85, 247, 0.35);
+  }
+
+  .look-joystick-thumb {
+    background: radial-gradient(circle, #c084fc 0%, #7c3aed 100%);
+    border-color: #f3e8ff;
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.75);
+  }
+
+  /* Dedicated DECODE Button on Mobile: Sits directly above right rotation joystick */
   .hud-decode-btn-container {
-    bottom: 128px;
-    right: 12px;
-    width: 105px;
+    bottom: 148px;
+    right: 26px;
+    width: 108px;
     z-index: 35;
   }
 
@@ -923,13 +966,8 @@ body {
     display: none;
   }
 
-  /* Move look-zone hint away from decode/minimap */
   .touch-hint {
-    right: auto;
-    left: 50%;
-    transform: translateX(-50%);
-    bottom: 12px;
-    font-size: 0.65rem;
+    display: none;
   }
 }
 

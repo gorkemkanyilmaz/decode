@@ -286,6 +286,14 @@ export class Game {
     this.uiManager.onNumberSelected = (num: string) => {
       this.localNumber = num;
       this.networkManager.selectNumber(num);
+
+      // Re-enter the arena HUD immediately after number confirmation
+      if (this.currentState === 'PLAYING') {
+        this.uiManager.showHUD(this.localNumber);
+        if (window.innerWidth > 768) {
+          this.minimap.show();
+        }
+      }
     };
 
     this.uiManager.onEliminationAttempt = (targetId: string, guessedNumber: string) => {
@@ -376,6 +384,7 @@ export class Game {
 
     // 1. Update Camera and Local Movement
     if (this.currentState === 'PLAYING') {
+      this.inputManager.update(delta);
       const moveInput = this.inputManager.getMovementInput();
       this.cameraController.update(
         delta,
