@@ -26,6 +26,7 @@ export class InputManager {
   private lookJoystickTouchId: number | null = null;
   private lookVector: { x: number; y: number } = { x: 0, y: 0 };
   private lastLookTouch: { x: number; y: number } = { x: 0, y: 0 };
+  private lookMode: 'none' | 'joystick' | 'swipe' = 'none';
 
   // Mobile action button states
   public mobileSprinting: boolean = false;
@@ -230,7 +231,7 @@ export class InputManager {
       window.addEventListener('mouseup', onMouseUp);
     });
 
-    // Right Look / Rotation Joystick Zone
+    // Right Look / Rotation Zone (Dual-mode: Joystick on base, Swipe on open screen)
     const lookBase = document.getElementById('joystick-look-base');
     const lookThumb = document.getElementById('joystick-look-thumb');
 
@@ -250,39 +251,74 @@ export class InputManager {
       this.lookJoystickTouchId = id;
       this.lastLookTouch = { x: clientX, y: clientY };
       lookCenter = getLookCenter();
-      processLook(clientX, clientY);
+
+      // Check if touch is on or near the right joystick base (within 75px)
+      const distFromCenter = Math.sqrt((clientX - lookCenter.x) ** 2 + (clientY - lookCenter.y) ** 2);
+      if (distFromCenter <= 75) {
+        this.lookMode = 'joystick';
+        if (lookThumb) lookThumb.style.transition = 'none';
+        processLook(clientX, clientY);
+      } else {
+        // Touched open screen: treat as direct precision swipe
+        this.lookMode = 'swipe';
+        this.lookVector = { x: 0, y: 0 };
+      }
     };
 
     const processLook = (clientX: number, clientY: number) => {
       if (!this.lookJoystickActive) return;
 
-      const dx = clientX - lookCenter.x;
-      const dy = clientY - lookCenter.y;
-      const maxDist = 44;
-      const actualDist = Math.sqrt(dx * dx + dy * dy);
-      const clampedDist = Math.min(maxDist, actualDist);
-      const angle = Math.atan2(dy, dx);
+      if (this.lookMode === 'joystick') {
+        const dx = clientX - lookCenter.x;
+        const dy = clientY - lookCenter.y;
+        const maxDist = 44;
+        const actualDist = Math.sqrt(dx * dx + dy * dy);
+        const clampedDist = Math.min(maxDist, actualDist);
+        const angle = Math.atan2(dy, dx);
 
-      const thumbX = Math.cos(angle) * clampedDist;
-      const thumbY = Math.sin(angle) * clampedDist;
+        const thumbX = Math.cos(angle) * clampedDist;
+        const thumbY = Math.sin(angle) * clampedDist;
 
-      if (lookThumb) {
-        lookThumb.style.left = `calc(50% + ${thumbX}px)`;
-        lookThumb.style.top = `calc(50% + ${thumbY}px)`;
+        if (lookThumb) {
+          lookThumb.style.left = `calc(50% + ${thumbX}px)`;
+          lookThumb.style.top = `calc(50% + ${thumbY}px)`;
+        }
+
+        // Apply deadzone (15%) and smooth power curve (1.6) so micro-aim is super steady
+        const rawDeflection = clampedDist / maxDist;
+        const deadzone = 0.15;
+        if (rawDeflection <= deadzone) {
+          this.lookVector = { x: 0, y: 0 };
+        } else {
+          const normalized = (rawDeflection - deadzone) / (1 - deadzone);
+          const curved = Math.pow(normalized, 1.6);
+          this.lookVector = {
+            x: Math.cos(angle) * curved,
+            y: Math.sin(angle) * curved
+          };
+        }
+      } else if (this.lookMode === 'swipe') {
+        // Direct swipe look on open screen
+        const deltaX = clientX - this.lastLookTouch.x;
+        const deltaY = clientY - this.lastLookTouch.y;
+        this.lastLookTouch = { x: clientX, y: clientY };
+
+        const swipeSensitivity = 0.0032;
+        this.yaw -= deltaX * swipeSensitivity;
+        this.pitch -= deltaY * swipeSensitivity;
+
+        const maxPitch = (Math.PI / 2) * 0.95;
+        this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
       }
-
-      // Normalized look deflection vector for continuous rotation
-      this.lookVector = {
-        x: thumbX / maxDist,
-        y: thumbY / maxDist
-      };
     };
 
     const endLook = () => {
       this.lookJoystickActive = false;
+      this.lookMode = 'none';
       this.lookJoystickTouchId = null;
       this.lookVector = { x: 0, y: 0 };
       if (lookThumb) {
+        lookThumb.style.transition = 'left 0.15s ease-out, top 0.15s ease-out';
         lookThumb.style.left = '50%';
         lookThumb.style.top = '50%';
       }
@@ -306,16 +342,25 @@ export class InputManager {
       }
     }, { passive: false });
 
-    lookZone.addEventListener('touchend', (e) => {
+    // Global window listeners so releasing finger ANYWHERE immediately stops rotation
+    window.addEventListener('touchend', (e) => {
       for (let i = 0; i < e.changedTouches.length; i++) {
-        if (e.changedTouches[i].identifier === this.lookJoystickTouchId) {
+        const id = e.changedTouches[i].identifier;
+        if (id === this.lookJoystickTouchId) {
           endLook();
-          break;
         }
+        if (id === this.moveJoystickTouchId) {
+          endMove();
+        }
+      }
+      if (e.touches.length === 0) {
+        endMove();
+        endLook();
       }
     });
 
-    lookZone.addEventListener('touchcancel', () => {
+    window.addEventListener('touchcancel', () => {
+      endMove();
       endLook();
     });
 
@@ -335,10 +380,10 @@ export class InputManager {
   }
 
   public update(delta: number): void {
-    if (this.lookJoystickActive) {
-      // Rotate camera smoothly based on right joystick deflection
-      const turnSpeed = 2.8; // radians per second for yaw
-      const pitchSpeed = 1.9; // radians per second for pitch
+    if (this.lookJoystickActive && this.lookMode === 'joystick') {
+      // Smooth, comfortable yaw & pitch rotation
+      const turnSpeed = 1.9; // approx 108 deg/s at full deflection (was 2.8)
+      const pitchSpeed = 1.3; // gentle vertical tilt
       this.yaw -= this.lookVector.x * turnSpeed * delta;
       this.pitch -= this.lookVector.y * pitchSpeed * delta;
 
