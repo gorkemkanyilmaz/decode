@@ -454,16 +454,13 @@ export class UIManager {
           </div>
         </div>
 
-        <!-- Bottom Right Decode Button -->
+        <!-- Dedicated Tactical Decode Button -->
         <div class="hud-decode-btn-container">
-          <button id="btn-hud-decode" class="btn btn-decode interactive">DECODE [E]</button>
-        </div>
-
-        <!-- Mobile Action Buttons -->
-        <div class="mobile-action-buttons">
-          <button id="btn-mobile-sprint" class="mobile-action-btn interactive">SPRINT</button>
-          <button id="btn-mobile-jump" class="mobile-action-btn interactive">JUMP</button>
-          <button id="btn-mobile-crouch" class="mobile-action-btn interactive">CROUCH</button>
+          <button id="btn-hud-decode" class="btn btn-decode interactive" aria-label="Decode Target">
+            <span class="decode-btn-icon">🎯</span>
+            <span class="decode-btn-text">DECODE</span>
+            <span class="decode-btn-key">[E]</span>
+          </button>
         </div>
 
         <!-- Debug Overlay -->
@@ -532,15 +529,37 @@ export class UIManager {
       document.body.appendChild(overlay);
     }
 
-    // Set instant full-white blinding opacity
+    // Force layout reflow and set blinding white opacity
     overlay.style.transition = 'none';
-    overlay.style.opacity = Math.min(1.0, intensity).toString();
+    overlay.style.opacity = Math.min(1.0, Math.max(0.4, intensity)).toString();
+    void overlay.offsetWidth; // Force synchronous reflow
 
-    // Trigger smooth fade-out over duration
-    requestAnimationFrame(() => {
-      overlay!.style.transition = `opacity ${durationSec}s cubic-bezier(0.1, 0.7, 0.1, 1)`;
-      overlay!.style.opacity = '0';
-    });
+    // Hold the blinding flash for 80ms before fading out
+    setTimeout(() => {
+      if (overlay) {
+        overlay.style.transition = `opacity ${durationSec}s cubic-bezier(0.1, 0.7, 0.1, 1)`;
+        overlay.style.opacity = '0';
+      }
+    }, 80);
+  }
+
+  public triggerCameraShutterFlash(): void {
+    let shutter = document.getElementById('camera-shutter-flash');
+    if (!shutter) {
+      shutter = document.createElement('div');
+      shutter.id = 'camera-shutter-flash';
+      document.body.appendChild(shutter);
+    }
+    shutter.style.transition = 'none';
+    shutter.style.opacity = '0.9';
+    void shutter.offsetWidth; // Force synchronous reflow
+
+    setTimeout(() => {
+      if (shutter) {
+        shutter.style.transition = 'opacity 0.28s ease-out';
+        shutter.style.opacity = '0';
+      }
+    }, 45);
   }
 
   public updateHUD(
@@ -690,7 +709,10 @@ export class UIManager {
 
   public submitKeypadElimination(): void {
     if (this.keypadInput.length !== 4) return;
-    this.onEliminationAttempt?.(this.currentTargetId, this.keypadInput);
+    const code = this.keypadInput;
+    const target = this.currentTargetId;
+    this.closeKeypad();
+    this.onEliminationAttempt?.(target, code);
   }
 
   public closeKeypad(): void {
@@ -703,6 +725,18 @@ export class UIManager {
     if (errMsg) {
       errMsg.innerText = message;
       errMsg.style.display = 'block';
+    } else {
+      const feed = document.getElementById('hud-elimination-feed');
+      if (feed) {
+        const toast = document.createElement('div');
+        toast.className = 'elimination-feed-item';
+        toast.style.background = 'rgba(239, 68, 68, 0.9)';
+        toast.style.color = '#fff';
+        toast.style.fontWeight = 'bold';
+        toast.innerText = `[ATTACK FAILED] ${message}`;
+        feed.appendChild(toast);
+        setTimeout(() => toast.remove(), 3500);
+      }
     }
 
     this.sound.playEliminationFail();
@@ -764,18 +798,37 @@ export class UIManager {
   }
 
   public showSpyCameraPhotoCard(capturedNumber: string): void {
-    this.sound.playGadgetCamera();
-
     const card = document.createElement('div');
-    card.className = 'spy-card-popup';
-    card.innerHTML = `
-      <div class="spy-card-title">FOREHEAD CAPTURED</div>
-      <div class="spy-card-code">${capturedNumber}</div>
-      <div style="font-size: 0.7rem; color: #64748b;">PHOTO STORED (5s)</div>
+    card.id = 'spy-camera-photo-card';
+    card.style.cssText = `
+      position: absolute; bottom: 130px; right: 35px; z-index: 80;
+      background: linear-gradient(135deg, rgba(10, 18, 36, 0.95), rgba(15, 23, 42, 0.95));
+      border: 2px solid var(--accent-cyan); border-radius: 14px; padding: 18px 24px;
+      box-shadow: 0 0 35px rgba(0, 240, 255, 0.45); text-align: center;
+      backdrop-filter: blur(12px); animation: fadeIn 0.3s ease;
     `;
-    this.root.appendChild(card);
+    card.innerHTML = `
+      <div style="font-size: 0.75rem; color: var(--accent-cyan); font-weight: 800; letter-spacing: 2px; margin-bottom: 4px;">
+        📸 SPY SATELLITE PHOTO INTEL
+      </div>
+      <div style="font-family: var(--font-mono); font-size: 2.2rem; font-weight: 900; color: #ffd700; letter-spacing: 6px; text-shadow: 0 0 15px rgba(255, 215, 0, 0.6); margin: 4px 0;">
+        ${capturedNumber}
+      </div>
+      <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">
+        Press [E] to input this code and eliminate target!
+      </div>
+    `;
 
-    setTimeout(() => card.remove(), 5000);
+    document.getElementById('spy-camera-photo-card')?.remove();
+    this.root.appendChild(card);
+    this.sound.playCameraShutter();
+
+    setTimeout(() => {
+      card.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+      card.style.opacity = '0';
+      card.style.transform = 'translateY(15px)';
+      setTimeout(() => card.remove(), 600);
+    }, 6000);
   }
 
   public showRoundEnd(players: PlayerPublicInfo[], winnerName: string): void {
@@ -813,5 +866,19 @@ export class UIManager {
         </div>
       </div>
     `;
+  }
+
+
+  public showNotification(message: string): void {
+    const feed = document.getElementById('hud-elimination-feed');
+    if (feed) {
+      const item = document.createElement('div');
+      item.className = 'elimination-feed-item';
+      item.style.background = 'rgba(14, 165, 233, 0.9)';
+      item.style.color = '#fff';
+      item.innerText = message;
+      feed.appendChild(item);
+      setTimeout(() => item.remove(), 3500);
+    }
   }
 }

@@ -255,4 +255,28 @@ export class SoundSystem {
     osc.start(now);
     osc.stop(now + 0.12);
   }
+
+  public playCameraShutter(): void {
+    if (!this.ctx || this.isMuted) return;
+    const now = this.ctx.currentTime;
+
+    // Dual-click mechanical shutter
+    [0, 0.08].forEach((offset) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(1200, now + offset);
+      osc.frequency.exponentialRampToValueAtTime(200, now + offset + 0.04);
+
+      gain.gain.setValueAtTime(0.15, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.04);
+
+      osc.connect(gain);
+      gain.connect(this.ctx!.destination);
+
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.04);
+    });
+  }
 }

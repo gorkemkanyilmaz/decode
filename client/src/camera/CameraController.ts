@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GAME_CONSTANTS } from '@shared/constants/game';
+import { LADDERS } from '@shared/constants/mapLayout';
 import { WorldBuilder } from '../world/WorldBuilder';
 import { SoundSystem } from '../audio/SoundSystem';
 
@@ -122,12 +123,59 @@ export class CameraController {
       this.isGrounded = false;
     }
 
+    // Ladder climbing interaction (Section 42)
+    let isClimbingLadder = false;
+    for (const ladder of LADDERS) {
+      const b = ladder.bounds;
+      if (
+        this.position.x >= b.min[0] &&
+        this.position.x <= b.max[0] &&
+        this.position.z >= b.min[2] &&
+        this.position.z <= b.max[2] &&
+        this.position.y >= b.min[1] - 0.25 &&
+        this.position.y <= b.max[1] + 0.6
+      ) {
+        // W key (moveZ > 0) or Space = climb UP
+        if (moveInput.moveZ > 0.1 || moveInput.isJumping) {
+          isClimbingLadder = true;
+          this.velocity.y = 3.6; // Climb upward
+          this.velocity.x *= 0.3; // Dampen horizontal movement while climbing
+          this.velocity.z *= 0.3;
+          this.isGrounded = false;
+
+          // If near or at top of ladder, propel forward onto the top surface
+          if (this.position.y >= ladder.height - 0.5) {
+            const fwd = new THREE.Vector3(-Math.sin(ladder.rotationY), 0, -Math.cos(ladder.rotationY));
+            this.position.addScaledVector(fwd, delta * 4.0);
+            this.position.y = ladder.height + 0.05;
+            this.velocity.y = 0;
+            this.isGrounded = true;
+          }
+          break;
+        // S key (moveZ < 0) = climb DOWN
+        } else if (moveInput.moveZ < -0.1) {
+          isClimbingLadder = true;
+          this.velocity.y = -3.2; // Climb downward
+          this.velocity.x *= 0.3;
+          this.velocity.z *= 0.3;
+          this.isGrounded = false;
+          break;
+        } else {
+          // Player is on the ladder but not pressing W or S — hold position
+          isClimbingLadder = true;
+          this.velocity.y = 0;
+          this.isGrounded = false;
+          break;
+        }
+      }
+    }
+
     if (this.isGrounded && moveInput.isJumping) {
       this.velocity.y = GAME_CONSTANTS.JUMP_FORCE;
       this.isGrounded = false;
     }
 
-    if (!this.isGrounded) {
+    if (!this.isGrounded && !isClimbingLadder) {
       this.velocity.y -= GAME_CONSTANTS.GRAVITY * delta;
     }
 

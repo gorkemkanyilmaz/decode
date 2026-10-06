@@ -30,10 +30,33 @@ export class PlayerManager {
     this.scene = scene;
   }
 
+  public getRemotePlayer(id: string): RemotePlayerData | undefined {
+    return this.remotePlayers.get(id);
+  }
+
   public updateFromSnapshot(
     snapshots: ClientPlayerSnapshot[],
-    playersPublicInfo: Map<string, PlayerPublicInfo>
+    playersPublicInfo: Map<string, PlayerPublicInfo>,
+    currentLocalId?: string
   ): void {
+    if (currentLocalId) {
+      this.localPlayerId = currentLocalId;
+    }
+
+    // Clean up local player if it was mistakenly registered in remotePlayers
+    if (this.localPlayerId && this.remotePlayers.has(this.localPlayerId)) {
+      const selfRemote = this.remotePlayers.get(this.localPlayerId);
+      if (selfRemote) {
+        this.scene.remove(selfRemote.model.group);
+        this.remotePlayers.delete(this.localPlayerId);
+      }
+    }
+
+    // If local player ID is not yet confirmed, wait for identification before spawning remotes
+    if (!this.localPlayerId) {
+      return;
+    }
+
     const presentIds = new Set<string>();
 
     for (const snap of snapshots) {
@@ -131,6 +154,12 @@ export class PlayerManager {
         remote.isSpawnProtected
       );
 
+      // Prevent near-clipping artifacts if a player is standing right against the camera lens
+      if (camera) {
+        const distToCam = camera.position.distanceTo(remote.currentPos);
+        remote.model.headGroup.visible = distToCam > 0.42;
+      }
+
       // 4. Client-side instantaneous visibility check (Section 47 & 48)
       if (camera && obstacles) {
         const isVisible = VisibilitySystem.isNumberVisible(
@@ -216,6 +245,22 @@ export class PlayerManager {
 
   public getPlayerCount(): number {
     return this.remotePlayers.size + (this.localPlayerId ? 1 : 0);
+  }
+
+  /**
+   * Returns positions of all remote players for minimap display
+   */
+  public getRemotePlayerPositions(): { position: THREE.Vector3; team: string }[] {
+    const result: { position: THREE.Vector3; team: string }[] = [];
+    for (const remote of this.remotePlayers.values()) {
+      if (!remote.isDead) {
+        result.push({
+          position: remote.currentPos.clone(),
+          team: 'none' // Team info not stored in RemotePlayerData, default to none
+        });
+      }
+    }
+    return result;
   }
 
   public clear(): void {

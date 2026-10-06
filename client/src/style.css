@@ -49,7 +49,7 @@ body {
   left: 0;
   width: 100%;
   height: 100%;
-  z-index: 10;
+  z-index: 30;
   pointer-events: none;
 }
 
@@ -68,7 +68,7 @@ body {
   justify-content: center;
   background: radial-gradient(circle at center, rgba(15, 23, 42, 0.88) 0%, rgba(9, 13, 22, 0.96) 100%);
   backdrop-filter: blur(12px);
-  z-index: 50;
+  z-index: 1000;
   pointer-events: auto;
   padding: 20px;
   animation: fadeIn 0.3s ease-out;
@@ -520,19 +520,44 @@ body {
 .hud-decode-btn-container {
   position: absolute;
   bottom: 24px;
-  right: 24px;
+  right: 185px;
   pointer-events: auto;
+  z-index: 35;
 }
 
 .btn-decode {
-  padding: 16px 28px;
-  font-size: 1.15rem;
+  padding: 14px 24px;
+  font-size: 1.1rem;
   border-radius: 14px;
   background: linear-gradient(135deg, #0284c7 0%, var(--accent-cyan) 100%);
   color: #031525;
   box-shadow: 0 8px 30px rgba(0, 240, 255, 0.4);
   font-weight: 800;
   letter-spacing: 1.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.btn-decode:active {
+  transform: scale(0.96);
+}
+
+.decode-btn-icon {
+  font-size: 1.2rem;
+}
+
+.decode-btn-text {
+  font-weight: 800;
+}
+
+.decode-btn-key {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  font-family: var(--font-mono);
 }
 
 .btn-decode.cooldown {
@@ -630,9 +655,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(8px);
-  z-index: 60;
+  background: rgba(10, 15, 30, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 2000;
   pointer-events: auto;
   animation: fadeIn 0.2s ease-out;
 }
@@ -704,7 +730,7 @@ body {
 .touch-controls {
   position: absolute;
   inset: 0;
-  z-index: 20;
+  z-index: 15;
   pointer-events: none;
 }
 
@@ -730,67 +756,181 @@ body {
 
 .touch-hint {
   position: absolute;
-  bottom: 20px;
-  right: 20px;
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.3);
+  bottom: 16px;
+  right: 125px;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.35);
   text-transform: uppercase;
   letter-spacing: 1px;
+  pointer-events: none;
 }
 
+/* Glassmorphic Tactical Virtual Joystick */
 .joystick-base {
   position: absolute;
-  width: 120px;
-  height: 120px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  width: 110px;
+  height: 110px;
+  background: radial-gradient(circle, rgba(15, 23, 42, 0.65) 0%, rgba(3, 7, 18, 0.88) 100%);
+  border: 2px solid rgba(56, 189, 248, 0.45);
   border-radius: 50%;
-  transform: translate(-50%, -50%);
-  display: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), inset 0 0 16px rgba(56, 189, 248, 0.15);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+  display: block;
+  left: 80px;
+  bottom: 80px;
+  transform: translate(-50%, 50%);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+/* Outer dashed sprint threshold ring */
+.joystick-base::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  border: 1.5px dashed rgba(56, 189, 248, 0.35);
+  pointer-events: none;
+}
+
+/* Active Sprinting State on Joystick (edge-deflection triggered) */
+.joystick-base.sprinting {
+  border-color: #f59e0b;
+  box-shadow: 0 0 25px rgba(245, 158, 11, 0.7), inset 0 0 20px rgba(245, 158, 11, 0.3);
+  animation: joystickSprintPulse 0.6s infinite alternate;
+}
+
+.joystick-base.sprinting::after {
+  border-color: rgba(251, 191, 36, 0.85);
+  border-style: solid;
+}
+
+@keyframes joystickSprintPulse {
+  from { transform: translate(-50%, -50%) scale(1); }
+  to { transform: translate(-50%, -50%) scale(1.05); }
 }
 
 .joystick-thumb {
   position: absolute;
-  width: 50px;
-  height: 50px;
-  background: radial-gradient(circle, var(--accent-cyan) 0%, #0284c7 100%);
+  width: 44px;
+  height: 44px;
+  background: radial-gradient(circle, #38bdf8 0%, #0284c7 100%);
+  border: 2px solid #e0f2fe;
   border-radius: 50%;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  box-shadow: 0 0 15px rgba(0, 240, 255, 0.5);
+  box-shadow: 0 0 15px rgba(56, 189, 248, 0.7);
+  pointer-events: none;
+  transition: background 0.15s, box-shadow 0.15s;
 }
 
-/* Mobile Action Buttons (Jump, Crouch, Sprint) */
+.joystick-base.sprinting .joystick-thumb {
+  background: radial-gradient(circle, #fbbf24 0%, #ea580c 100%);
+  border-color: #fef08a;
+  box-shadow: 0 0 22px rgba(245, 158, 11, 0.95);
+}
+
+/* Mobile Action Buttons (permanently hidden per requirements) */
 .mobile-action-buttons {
-  position: absolute;
-  right: 20px;
-  bottom: 110px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  pointer-events: auto;
+  display: none !important;
 }
 
-.mobile-action-btn {
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  background: var(--bg-glass);
-  border: 1px solid var(--border-glass);
-  color: #fff;
-  font-weight: 800;
-  font-size: 0.85rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* =========================================================
+   Mobile Viewport Responsive Layout (max-width: 768px)
+   Eliminates all overlapping elements on small screens
+   ========================================================= */
+@media (max-width: 768px) {
+  /* Compact Top HUD Bar */
+  .hud-top-bar {
+    top: 8px;
+    padding: 4px 14px;
+    gap: 12px;
+    border-radius: 18px;
+    max-width: 95vw;
+  }
 
-.mobile-action-btn:active,
-.mobile-action-btn.active {
-  background: rgba(0, 240, 255, 0.35);
-  border-color: var(--accent-cyan);
-  box-shadow: 0 0 12px rgba(0, 240, 255, 0.5);
+  .hud-timer {
+    font-size: 1.1rem;
+  }
+
+  .hud-score-chip {
+    font-size: 0.8rem;
+    gap: 4px;
+  }
+
+  .hud-self-number {
+    font-size: 0.8rem;
+    padding: 2px 6px;
+  }
+
+  /* Gadgets Hotbar: Relocated cleanly to top-center below HUD */
+  .hud-gadgets-bar {
+    bottom: auto;
+    top: 62px;
+    left: 50%;
+    transform: translateX(-50%);
+    gap: 8px;
+  }
+
+  .gadget-slot {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+  }
+
+  .gadget-key-label {
+    display: none;
+  }
+
+  .gadget-name {
+    font-size: 0.65rem;
+  }
+
+  /* Dedicated DECODE Button on Mobile: Sits directly above the minimap */
+  .hud-decode-btn-container {
+    bottom: 128px;
+    right: 12px;
+    width: 105px;
+    z-index: 35;
+  }
+
+  .btn-decode {
+    width: 100%;
+    padding: 10px 4px;
+    font-size: 0.85rem;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    box-shadow: 0 4px 16px rgba(0, 240, 255, 0.45);
+  }
+
+  .decode-btn-icon {
+    font-size: 1.15rem;
+    line-height: 1;
+  }
+
+  .decode-btn-text {
+    font-size: 0.8rem;
+    letter-spacing: 1px;
+  }
+
+  .decode-btn-key {
+    display: none;
+  }
+
+  /* Move look-zone hint away from decode/minimap */
+  .touch-hint {
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 12px;
+    font-size: 0.65rem;
+  }
 }
 
 /* Debug Overlay */
@@ -811,4 +951,28 @@ body {
 
 .debug-overlay.visible {
   display: block;
+}
+
+/* Fullscreen Flashbang Blinding Overlay */
+#flashbang-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #ffffff;
+  pointer-events: none;
+  z-index: 99999;
+  opacity: 0;
+}
+
+/* High-tech Spy Camera Shutter Flash */
+#camera-shutter-flash {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background: radial-gradient(circle, rgba(224, 242, 254, 0.95) 0%, rgba(56, 189, 248, 0.4) 65%, transparent 100%);
+  pointer-events: none;
+  z-index: 99998;
+  opacity: 0;
 }

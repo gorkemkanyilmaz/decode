@@ -38,12 +38,19 @@ export class InputManager {
 
   constructor(canvas: HTMLElement) {
     this.canvas = canvas;
-    this.isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    this.isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 820;
 
     this.setupDesktopControls();
     if (this.isMobile) {
       this.setupMobileControls();
     }
+
+    window.addEventListener('resize', () => {
+      if (window.innerWidth <= 820 && !this.isMobile) {
+        this.isMobile = true;
+        this.setupMobileControls();
+      }
+    });
   }
 
   private setupDesktopControls(): void {
@@ -106,69 +113,119 @@ export class InputManager {
 
     if (!moveZone || !lookZone) return;
 
-    // Left Joystick Movement Zone
-    moveZone.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      const touch = e.changedTouches[0];
-      this.moveJoystickActive = true;
-      this.moveJoystickTouchId = touch.identifier;
-      this.moveJoystickStart = { x: touch.clientX, y: touch.clientY };
+    // Keep base permanently positioned and visible at bottom-left
+    const getJoystickCenter = () => {
+      if (!moveBase) return { x: 80, y: window.innerHeight - 80 };
+      const rect = moveBase.getBoundingClientRect();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2
+      };
+    };
 
+    let joystickCenter = { x: 80, y: window.innerHeight - 80 };
+
+    const startMove = (clientX: number, clientY: number, id: number | null) => {
+      this.moveJoystickActive = true;
+      this.moveJoystickTouchId = id;
+      joystickCenter = getJoystickCenter();
+      processMove(clientX, clientY);
+    };
+
+    const processMove = (clientX: number, clientY: number) => {
+      if (!this.moveJoystickActive) return;
+
+      const dx = clientX - joystickCenter.x;
+      const dy = clientY - joystickCenter.y;
+      const maxDist = 44;
+      const actualDist = Math.sqrt(dx * dx + dy * dy);
+      const clampedDist = Math.min(maxDist, actualDist);
+      const angle = Math.atan2(dy, dx);
+
+      const thumbX = Math.cos(angle) * clampedDist;
+      const thumbY = Math.sin(angle) * clampedDist;
+
+      if (moveThumb) {
+        moveThumb.style.left = `calc(50% + ${thumbX}px)`;
+        moveThumb.style.top = `calc(50% + ${thumbY}px)`;
+      }
+
+      // If dragged to edge (>= 80% deflection), sprint automatically!
+      const deflection = actualDist / maxDist;
+      if (deflection >= 0.80) {
+        this.mobileSprinting = true;
+        moveBase?.classList.add('sprinting');
+      } else {
+        this.mobileSprinting = false;
+        moveBase?.classList.remove('sprinting');
+      }
+
+      // Normalized movement vector
+      this.moveVector = {
+        x: thumbX / maxDist,
+        z: -(thumbY / maxDist) // Pull down = backward (+Z in local coords)
+      };
+    };
+
+    const endMove = () => {
+      this.moveJoystickActive = false;
+      this.moveJoystickTouchId = null;
+      this.moveVector = { x: 0, z: 0 };
+      this.mobileSprinting = false;
       if (moveBase) {
-        moveBase.style.display = 'block';
-        moveBase.style.left = `${touch.clientX}px`;
-        moveBase.style.top = `${touch.clientY}px`;
+        moveBase.classList.remove('sprinting');
       }
       if (moveThumb) {
         moveThumb.style.left = '50%';
         moveThumb.style.top = '50%';
       }
+    };
+
+    // Touch events for movement joystick
+    moveZone.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const touch = e.changedTouches[0];
+      startMove(touch.clientX, touch.clientY, touch.identifier);
     }, { passive: false });
 
     moveZone.addEventListener('touchmove', (e) => {
       e.preventDefault();
       if (!this.moveJoystickActive) return;
-
       for (let i = 0; i < e.changedTouches.length; i++) {
         const touch = e.changedTouches[i];
         if (touch.identifier === this.moveJoystickTouchId) {
-          const dx = touch.clientX - this.moveJoystickStart.x;
-          const dy = touch.clientY - this.moveJoystickStart.y;
-          const maxDist = 50;
-          const dist = Math.min(maxDist, Math.sqrt(dx * dx + dy * dy));
-          const angle = Math.atan2(dy, dx);
-
-          const thumbX = Math.cos(angle) * dist;
-          const thumbY = Math.sin(angle) * dist;
-
-          if (moveThumb) {
-            moveThumb.style.left = `calc(50% + ${thumbX}px)`;
-            moveThumb.style.top = `calc(50% + ${thumbY}px)`;
-          }
-
-          // Normalized movement vector
-          this.moveVector = {
-            x: thumbX / maxDist,
-            z: -(thumbY / maxDist) // Pull down = backward (+Z in local coords)
-          };
+          processMove(touch.clientX, touch.clientY);
           break;
         }
       }
     }, { passive: false });
 
-    const endMoveJoystick = (e: TouchEvent) => {
+    moveZone.addEventListener('touchend', (e) => {
       for (let i = 0; i < e.changedTouches.length; i++) {
         if (e.changedTouches[i].identifier === this.moveJoystickTouchId) {
-          this.moveJoystickActive = false;
-          this.moveJoystickTouchId = null;
-          this.moveVector = { x: 0, z: 0 };
-          if (moveBase) moveBase.style.display = 'none';
+          endMove();
           break;
         }
       }
-    };
-    moveZone.addEventListener('touchend', endMoveJoystick);
-    moveZone.addEventListener('touchcancel', endMoveJoystick);
+    });
+
+    moveZone.addEventListener('touchcancel', (e) => {
+      endMove();
+    });
+
+    // Mouse fallback for joystick dragging
+    moveZone.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      startMove(e.clientX, e.clientY, null);
+      const onMouseMove = (me: MouseEvent) => processMove(me.clientX, me.clientY);
+      const onMouseUp = () => {
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+        endMove();
+      };
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    });
 
     // Right Look Zone
     lookZone.addEventListener('touchstart', (e) => {
@@ -206,51 +263,13 @@ export class InputManager {
         }
       }
     };
-    // Action buttons for mobile
-    this.setupMobileActionButtons();
+
+    lookZone.addEventListener('touchend', endLook);
+    lookZone.addEventListener('touchcancel', endLook);
   }
 
   public setupMobileActionButtons(): void {
-    const sprintBtn = document.getElementById('btn-mobile-sprint');
-    const jumpBtn = document.getElementById('btn-mobile-jump');
-    const crouchBtn = document.getElementById('btn-mobile-crouch');
-
-    if (sprintBtn) {
-      sprintBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        this.mobileSprinting = !this.mobileSprinting;
-        sprintBtn.classList.toggle('active', this.mobileSprinting);
-      });
-      sprintBtn.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        this.mobileSprinting = !this.mobileSprinting;
-        sprintBtn.classList.toggle('active', this.mobileSprinting);
-      }, { passive: false });
-    }
-
-    if (jumpBtn) {
-      jumpBtn.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        this.mobileJumping = true;
-      }, { passive: false });
-      jumpBtn.addEventListener('touchend', (e) => {
-        e.preventDefault();
-        this.mobileJumping = false;
-      }, { passive: false });
-    }
-
-    if (crouchBtn) {
-      crouchBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        this.mobileCrouching = !this.mobileCrouching;
-        crouchBtn.classList.toggle('active', this.mobileCrouching);
-      });
-      crouchBtn.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        this.mobileCrouching = !this.mobileCrouching;
-        crouchBtn.classList.toggle('active', this.mobileCrouching);
-      }, { passive: false });
-    }
+    // Mobile action buttons removed from design; auto-sprint handled by joystick
   }
 
   public getMovementInput(): { moveX: number; moveZ: number; isSprinting: boolean; isCrouching: boolean; isJumping: boolean } {

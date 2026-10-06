@@ -3,9 +3,9 @@ export const GAME_CONSTANTS = {
   MAP_SIZE: 100, // 100m x 100m
 
   // Sight & Number Reading rules (Centrally configured)
-  NUMBER_READ_DISTANCE: 16.0, // 16 meters default readable distance (Section 7: 12-18m)
-  MAX_READING_DISTANCE: 16.0, // Alias for server & tests
-  BINOCULARS_READING_DISTANCE: 40.0, // Zoomed in reading distance
+  NUMBER_READ_DISTANCE: 25.0, // 25 meters default readable distance
+  MAX_READING_DISTANCE: 25.0, // Alias for server & tests
+  BINOCULARS_READING_DISTANCE: 50.0, // Zoomed in reading distance
 
   // Field of View check: observer camera forward vs direction to target
   // cos(45 deg) = 0.707 (within 45 degrees of camera center, Section 6)

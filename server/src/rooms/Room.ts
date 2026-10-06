@@ -156,9 +156,7 @@ export class Room {
    */
   public handleEliminationAttempt(attackerId: string, targetId: string, guessedNumber: string): void {
     const attacker = this.players.get(attackerId);
-    let target = this.players.get(targetId);
-
-    if (!attacker || !target) return;
+    if (!attacker) return;
 
     if (this.state !== 'PLAYING') {
       attacker.send({
@@ -180,30 +178,6 @@ export class Room {
       return;
     }
 
-    if (target.isDead) {
-      attacker.send({
-        type: 'ELIMINATION_REJECTED',
-        reason: 'invalid_target',
-        cooldownSeconds: 0,
-        message: 'Target is already eliminated.'
-      });
-      return;
-    }
-
-    if (attacker.id === target.id) {
-      return; // Cannot eliminate yourself
-    }
-
-    if (this.gameMode === 'team_hunt' && attacker.team === target.team) {
-      attacker.send({
-        type: 'ELIMINATION_REJECTED',
-        reason: 'friendly_fire',
-        cooldownSeconds: 1,
-        message: 'Cannot eliminate teammate.'
-      });
-      return;
-    }
-
     // Check cooldown
     const cooldown = attacker.canAttemptElimination();
     if (!cooldown.can) {
@@ -216,8 +190,11 @@ export class Room {
       return;
     }
 
-    // Target resolution: If targetId is not specified or ambiguous, match any active opponent with this number
-    if (!target) {
+    let target = targetId ? this.players.get(targetId) : undefined;
+
+    // Target resolution: If targetId is not specified or target doesn't match guessedNumber,
+    // match any living active opponent with this secret number
+    if (!target || target.secretNumber !== guessedNumber) {
       for (const p of this.players.values()) {
         if (p.id !== attacker.id && !p.isDead && p.secretNumber === guessedNumber) {
           if (this.gameMode !== 'team_hunt' || p.team !== attacker.team) {
@@ -237,6 +214,30 @@ export class Room {
         reason: 'wrong_number',
         cooldownSeconds: GAME_CONSTANTS.WRONG_GUESS_COOLDOWN_SEC,
         message: 'Invalid 4-digit code.'
+      });
+      return;
+    }
+
+    if (attacker.id === target.id) {
+      return; // Cannot eliminate yourself
+    }
+
+    if (this.gameMode === 'team_hunt' && attacker.team === target.team) {
+      attacker.send({
+        type: 'ELIMINATION_REJECTED',
+        reason: 'friendly_fire',
+        cooldownSeconds: 1,
+        message: 'Cannot eliminate teammate.'
+      });
+      return;
+    }
+
+    if (target.isDead) {
+      attacker.send({
+        type: 'ELIMINATION_REJECTED',
+        reason: 'invalid_target',
+        cooldownSeconds: 0,
+        message: 'Target is already eliminated.'
       });
       return;
     }
@@ -304,9 +305,13 @@ export class Room {
     }
 
     const id = `gadget_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const pos: [number, number, number] = targetPosition || [
+    const pos: [number, number, number] = targetPosition ? [
+      targetPosition[0],
+      Math.max(0.6, targetPosition[1]),
+      targetPosition[2]
+    ] : [
       player.position[0],
-      player.position[1] + 0.5,
+      Math.max(0.6, player.position[1] + 0.5),
       player.position[2]
     ];
 
@@ -322,18 +327,46 @@ export class Room {
       radius = GAME_CONSTANTS.FLASH_RADIUS;
     } else if (gadget === 'camera') {
       duration = GAME_CONSTANTS.CAMERA_DURATION_SEC;
-      // Camera snaps opponent in front if visible
+      // Authoritative camera snapshot: only captures target number if target's front (forehead)
+      // is directly facing viewer within readable range and not occluded by obstacles or smoke.
+      const smokeObstacles: BoundingBox[] = this.activeGadgets
+        .filter((g) => g.type === 'smoke')
+        .map((g) => ({
+          min: [g.position[0] - g.radius, g.position[1], g.position[2] - g.radius],
+          max: [g.position[0] + g.radius, g.position[1] + g.radius, g.position[2] + g.radius]
+        }));
+      const allObstacles = [...COLLISION_OBSTACLES, ...smokeObstacles];
+
+      const viewerEye = player.getHeadPosition();
+
       for (const other of this.players.values()) {
         if (other.id !== player.id && !other.isDead) {
-          const eye = player.getHeadPosition();
           const targetHead = other.getHeadPosition();
-          const dist = v3Distance(eye, targetHead);
+          const dist = v3Distance(viewerEye, targetHead);
+
+          // Must be within readable distance (25m), not beyond reading range
           if (dist <= GAME_CONSTANTS.MAX_READING_DISTANCE) {
-            const los = isLineOfSightClear(eye, targetHead, COLLISION_OBSTACLES);
-            const facing = isForeheadFacingViewer(v3FromArray(other.position), other.rotationY, eye);
-            if (los && facing) {
-              capturedNumber = other.secretNumber;
-              break;
+            // Must have clear line of sight (no intervening obstacles/smoke)
+            const hasLOS = isLineOfSightClear(viewerEye, targetHead, allObstacles);
+            if (hasLOS) {
+              // Target MUST be facing the viewer (front visible, not back)
+              const isFacing = isForeheadFacingViewer(
+                v3FromArray(other.position),
+                other.rotationY,
+                viewerEye
+              );
+              if (isFacing) {
+                // Viewer MUST be looking towards the target
+                const lookingAt = isViewerLookingAtTarget(
+                  viewerEye,
+                  player.rotationY,
+                  v3FromArray(other.position)
+                );
+                if (lookingAt) {
+                  capturedNumber = other.secretNumber;
+                  break;
+                }
+              }
             }
           }
         }

@@ -7,11 +7,13 @@ import { InputManager } from '../input/InputManager';
 import { SoundSystem } from '../audio/SoundSystem';
 import { NetworkManager } from '../network/NetworkManager';
 import { UIManager } from '../ui/UIManager';
+import { Minimap } from '../ui/Minimap';
 import {
   RoundState,
   PlayerPublicInfo,
   GadgetType
 } from '@shared/types/game';
+import { GAME_CONSTANTS } from '@shared/constants/game';
 import { ServerMessage } from '@shared/protocol/messages';
 
 export class Game {
@@ -25,6 +27,7 @@ export class Game {
   private soundSystem!: SoundSystem;
   private networkManager!: NetworkManager;
   private uiManager!: UIManager;
+  private minimap!: Minimap;
 
   // Local state
   private currentState: RoundState = 'LOBBY';
@@ -76,6 +79,7 @@ export class Game {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     container.appendChild(this.renderer.domElement);
 
@@ -95,6 +99,8 @@ export class Game {
     this.inputManager = new InputManager(this.renderer.domElement);
     this.networkManager = new NetworkManager();
     this.uiManager = new UIManager(this.soundSystem);
+    this.minimap = new Minimap();
+    this.minimap.hide(); // Hidden until in-game
 
     // Initial camera position overlooking arena
     this.cameraController.setSpawn([0, 15, 35], 0);
@@ -135,17 +141,20 @@ export class Game {
           } else if (msg.state === 'PLAYING') {
             this.soundSystem.playRoundStart();
             this.uiManager.showHUD(this.localNumber);
+            this.minimap.show();
             if (!this.hasSpawned) {
               // Ensure player is at ground level immediately rather than high preview camera
               this.cameraController.setSpawn([0, 0, 0], 0);
             }
           } else if (msg.state === 'ROUND_END') {
             this.hasSpawned = false;
+            this.minimap.hide();
             const playersList = Array.from(this.playersMap.values());
             const winner = playersList.sort((a, b) => b.score - a.score)[0];
             this.uiManager.showRoundEnd(playersList, winner?.name || 'Top Agent');
           } else if (msg.state === 'LOBBY') {
             this.hasSpawned = false;
+            this.minimap.hide();
           }
           break;
         }
@@ -157,7 +166,7 @@ export class Game {
 
         case 'GAME_SNAPSHOT': {
           this.roundTimer = msg.timer;
-          this.playerManager.updateFromSnapshot(msg.players, this.playersMap);
+          this.playerManager.updateFromSnapshot(msg.players, this.playersMap, this.networkManager.playerId);
 
           // Update local player state from snapshot
           const selfSnap = msg.players.find((p) => p.id === this.networkManager.playerId);
@@ -187,9 +196,19 @@ export class Game {
           this.uiManager.addEliminationFeedItem(msg.attackerName, msg.victimName, msg.eliminatedNumber);
 
           // Find victim position for VFX
-          const victim = this.playersMap.get(msg.victimId);
+          const victim = this.playerManager.getRemotePlayer(msg.victimId);
           if (victim) {
-            this.particleSystem.spawnEliminationEffect([0, 0, 0]);
+            this.particleSystem.spawnEliminationEffect([
+              victim.currentPos.x,
+              victim.currentPos.y + 1,
+              victim.currentPos.z
+            ]);
+          } else {
+            this.particleSystem.spawnEliminationEffect([
+              this.cameraController.position.x,
+              this.cameraController.position.y,
+              this.cameraController.position.z
+            ]);
           }
 
           if (msg.isSelfAttacker) {
@@ -220,8 +239,14 @@ export class Game {
               const intensity = Math.max(0.35, 1.0 - (dist / GAME_CONSTANTS.FLASH_RADIUS) * 0.65);
               this.uiManager.triggerFlashbang(intensity, GAME_CONSTANTS.FLASH_DURATION_SEC);
             }
-          } else if (msg.gadgetType === 'camera' && msg.capturedNumber) {
-            this.uiManager.showSpyCameraPhotoCard(msg.capturedNumber);
+          } else if (msg.gadgetType === 'camera') {
+            this.soundSystem.playCameraShutter();
+            this.uiManager.triggerCameraShutterFlash();
+            if (msg.capturedNumber) {
+              this.uiManager.showSpyCameraPhotoCard(msg.capturedNumber);
+            } else if (msg.ownerId === this.networkManager.playerId) {
+              this.uiManager.showNotification('📷 SPY SATELLITE: NO TARGET IN DIRECT SIGHT');
+            }
           }
           break;
         }
@@ -309,6 +334,9 @@ export class Game {
   private handleGadgetAction(gadget: GadgetType): void {
     if (this.currentState !== 'PLAYING') return;
 
+    // Do NOT trigger gadgets when player is typing numeric cipher into keypad modal
+    if (this.uiManager.isKeypadOpen) return;
+
     if (gadget === 'binoculars') {
       this.cameraController.toggleZoom();
       return;
@@ -321,10 +349,12 @@ export class Game {
 
     const camPos = this.cameraController.camera.position;
     const forward = this.cameraController.getForwardDirection();
+    const throwDist = 6.5;
+    const spawnY = Math.max(0.6, camPos.y + forward.y * throwDist);
     const targetPos: [number, number, number] = [
-      camPos.x + forward.x * 5,
-      camPos.y + forward.y * 5,
-      camPos.z + forward.z * 5
+      camPos.x + forward.x * throwDist,
+      spawnY,
+      camPos.z + forward.z * throwDist
     ];
 
     this.uiManager.startGadgetCooldown(gadget, GAME_CONSTANTS.GADGET_COOLDOWN_SEC);
@@ -383,6 +413,12 @@ export class Game {
       const target = this.playerManager.getTargetInCrosshair(
         this.cameraController.camera,
         this.worldBuilder.obstacles
+      );
+
+      // Update minimap (local player and obstacles only)
+      this.minimap.update(
+        this.cameraController.position,
+        this.cameraController.yaw
       );
 
       this.uiManager.updateHUD(

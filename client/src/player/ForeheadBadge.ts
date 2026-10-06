@@ -14,40 +14,45 @@ export class ForeheadBadge {
     // Hidden by default until visibility conditions are satisfied
     this.mesh.visible = false;
 
-    // 256x96 dynamic canvas for high-contrast crisp 4-digit typography
+    // 640x220 dynamic canvas for massive ultra-crisp readable 4-digit typography (1.5x scaled)
     this.canvas = document.createElement('canvas');
-    this.canvas.width = 256;
-    this.canvas.height = 96;
+    this.canvas.width = 640;
+    this.canvas.height = 220;
     this.ctx = this.canvas.getContext('2d')!;
 
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.minFilter = THREE.LinearFilter;
     this.texture.magFilter = THREE.LinearFilter;
 
-    // Physical mounting plate on forehead
-    const plateGeo = new THREE.BoxGeometry(0.30, 0.10, 0.02);
+    // Physical mounting plate above head (1.15m wide x 0.38m high)
+    const plateGeo = new THREE.BoxGeometry(1.15, 0.38, 0.035);
     const plateMat = new THREE.MeshStandardMaterial({
-      color: 0x0a0f1d,
+      color: 0x050a18,
       roughness: 0.35,
-      metalness: 0.8
+      metalness: 0.88
     });
     const plate = new THREE.Mesh(plateGeo, plateMat);
-    // Plate center is at origin, back sits against forehead at z = 0, front is at z = -0.01
     plate.position.set(0, 0, 0);
     this.mesh.add(plate);
 
     // Glowing front display surface facing forward (-Z)
-    const screenGeo = new THREE.PlaneGeometry(0.28, 0.085);
+    const screenGeo = new THREE.PlaneGeometry(1.10, 0.35);
     const screenMat = new THREE.MeshBasicMaterial({
       map: this.texture,
       transparent: true,
-      side: THREE.FrontSide // Only readable from the front! Backface naturally culled
+      side: THREE.FrontSide // Only readable from front!
     });
     const screen = new THREE.Mesh(screenGeo, screenMat);
-    // Face the front (-Z): PlaneGeometry default normal is +Z, so rotate by 180 deg around Y
-    screen.rotation.y = Math.PI;
-    screen.position.set(0, 0, -0.011);
+    screen.rotation.y = Math.PI; // Face front (-Z)
+    screen.position.set(0, 0, -0.019);
     this.mesh.add(screen);
+
+    // Sleek cyber mounting bracket connecting down to head
+    const bracketGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.24, 8);
+    const bracketMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.9, roughness: 0.2 });
+    const bracket = new THREE.Mesh(bracketGeo, bracketMat);
+    bracket.position.set(0, -0.22, 0);
+    this.mesh.add(bracket);
   }
 
   /**
@@ -104,21 +109,21 @@ export class ForeheadBadge {
       this.ctx.stroke();
     }
 
-    // High-contrast, clean 4-digit typography
-    this.ctx.font = '900 52px "JetBrains Mono", monospace';
+    // High-contrast, massive 4-digit typography (1.5x)
+    this.ctx.font = '900 135px "JetBrains Mono", monospace';
     this.ctx.textAlign = 'center';
     this.ctx.textBaseline = 'middle';
 
     // Outer glow
     this.ctx.shadowColor = '#00F0FF';
-    this.ctx.shadowBlur = 10;
+    this.ctx.shadowBlur = 18;
     this.ctx.fillStyle = '#FFFFFF';
-    this.ctx.fillText(digits, w / 2, h / 2 + 2);
+    this.ctx.fillText(digits, w / 2, h / 2 + 6);
 
     // Inner bright core
     this.ctx.shadowBlur = 0;
     this.ctx.fillStyle = '#00F0FF';
-    this.ctx.fillText(digits, w / 2, h / 2 + 2);
+    this.ctx.fillText(digits, w / 2, h / 2 + 6);
 
     this.texture.needsUpdate = true;
   }

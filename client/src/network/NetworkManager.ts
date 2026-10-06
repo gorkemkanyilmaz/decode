@@ -15,10 +15,15 @@ export class NetworkManager {
   private onDisconnectHandlers: (() => void)[] = [];
 
   constructor() {
-    const host = window.location.hostname || 'localhost';
-    const port = 3001;
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    this.url = `${protocol}//${host}:${port}`;
+    const envUrl = (import.meta as any).env?.VITE_WS_URL;
+    if (envUrl) {
+      this.url = envUrl;
+    } else {
+      const host = window.location.hostname || 'localhost';
+      const port = 3001;
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      this.url = `${protocol}//${host}:${port}`;
+    }
   }
 
   public connect(): Promise<void> {

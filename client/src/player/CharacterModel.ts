@@ -86,10 +86,9 @@ export class CharacterModel {
     glasses.position.set(0, 0.02, -0.19);
     this.headGroup.add(glasses);
 
-    // 3. Forehead Number Badge
-    // Anchored directly to forehead/upper face level: y = +0.13, z = -0.20
+    // 3. Number Badge Floating Above Head (1.5x scaled)
     this.foreheadBadge = new ForeheadBadge(isSelf);
-    this.foreheadBadge.mesh.position.set(0, 0.13, -0.20);
+    this.foreheadBadge.mesh.position.set(0, 0.54, 0);
     this.headGroup.add(this.foreheadBadge.mesh);
 
     // 4. Hat / Accessory (Aligned to front -Z)
@@ -131,6 +130,13 @@ export class CharacterModel {
     if (isSelf) {
       this.torso.visible = false;
       this.headGroup.visible = false;
+      this.leftArm.visible = false;
+      this.rightArm.visible = false;
+      this.leftLeg.visible = false;
+      this.rightLeg.visible = false;
+      this.foreheadBadge.setVisible(false);
+      this.shieldMesh.visible = false;
+      this.group.visible = false;
     }
   }
 

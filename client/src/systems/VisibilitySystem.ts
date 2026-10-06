@@ -40,7 +40,7 @@ export class VisibilitySystem {
 
     const targetForeheadPos = new THREE.Vector3(
       target.position.x,
-      target.position.y + headHeight,
+      target.position.y + headHeight + 0.45,
       target.position.z
     );
 

@@ -94,3 +94,12 @@ export interface SpawnPoint {
   rotationY: number;
   team?: Team;
 }
+
+export interface LadderDefinition {
+  id: string;
+  position: [number, number, number];
+  height: number;
+  rotationY: number;
+  bounds: BoundingBox;
+}
+
