@@ -42,8 +42,8 @@ export class Room {
     this.gameMode = gameMode;
     this.maxPlayers = maxPlayers;
 
-    this.addPlayer(hostPlayer);
     hostPlayer.isHost = true;
+    this.addPlayer(hostPlayer);
 
     this.startTickLoop();
   }

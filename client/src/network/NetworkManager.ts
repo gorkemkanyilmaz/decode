@@ -14,12 +14,24 @@ export class NetworkManager {
   private onConnectHandlers: (() => void)[] = [];
   private onDisconnectHandlers: (() => void)[] = [];
 
+  private connectPromise: Promise<void> | null = null;
+
   constructor() {
     const envUrl = (import.meta as any).env?.VITE_WS_URL;
+    const host = window.location.hostname;
+    const isLocalOrLAN =
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host.startsWith('192.168.') ||
+      host.startsWith('10.') ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) ||
+      window.location.port === '3000';
+
     if (envUrl) {
       this.url = envUrl;
-    } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      this.url = 'ws://localhost:3001';
+    } else if (isLocalOrLAN) {
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      this.url = `${wsProtocol}//${host}:3001`;
     } else {
       // Production fallback directly to deployed Render WebSocket server
       this.url = 'wss://decode-server.onrender.com';
@@ -27,11 +39,33 @@ export class NetworkManager {
   }
 
   public connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      return Promise.resolve();
+    }
+    if (this.connectPromise && this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+      return this.connectPromise;
+    }
+
+    this.connectPromise = new Promise((resolve, reject) => {
       try {
+        if (this.ws) {
+          try {
+            this.ws.close();
+          } catch (_) {}
+        }
+
         this.ws = new WebSocket(this.url);
 
+        const connectionTimeout = window.setTimeout(() => {
+          if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+            this.connectPromise = null;
+            reject(new Error(`Connection to ${this.url} timed out.`));
+          }
+        }, 8000);
+
         this.ws.onopen = () => {
+          window.clearTimeout(connectionTimeout);
+          this.connectPromise = null;
           this.startPingLoop();
           this.onConnectHandlers.forEach((cb) => cb());
           resolve();
@@ -56,18 +90,25 @@ export class NetworkManager {
         };
 
         this.ws.onclose = () => {
+          window.clearTimeout(connectionTimeout);
+          this.connectPromise = null;
           if (this.pingInterval) clearInterval(this.pingInterval);
           this.onDisconnectHandlers.forEach((cb) => cb());
         };
 
         this.ws.onerror = (err) => {
+          window.clearTimeout(connectionTimeout);
+          this.connectPromise = null;
           console.error('WebSocket connection error:', err);
           reject(err);
         };
       } catch (err) {
+        this.connectPromise = null;
         reject(err);
       }
     });
+
+    return this.connectPromise;
   }
 
   public onMessage(callback: (msg: ServerMessage) => void): void {

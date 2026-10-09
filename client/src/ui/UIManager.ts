@@ -95,7 +95,9 @@ export class UIManager {
             </div>
           </div>
 
-          <div style="display: flex; gap: 12px; margin-top: 24px;">
+          <div id="menu-error-banner" style="display: none; color: #ff6b6b; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; padding: 10px 14px; margin-top: 14px; font-size: 0.85rem; text-align: center;"></div>
+
+          <div style="display: flex; gap: 12px; margin-top: 20px;">
             <button id="btn-create-room" class="btn btn-primary" style="flex: 1;">Create Room</button>
             <button id="btn-join-room-modal" class="btn btn-secondary" style="flex: 1;">Join Room</button>
           </div>
@@ -144,6 +146,13 @@ export class UIManager {
 
     document.getElementById('btn-create-room')?.addEventListener('click', () => {
       this.sound.playKeypadClick(4);
+      const btn = document.getElementById('btn-create-room') as HTMLButtonElement | null;
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = 'Creating Room...';
+      }
+      const banner = document.getElementById('menu-error-banner');
+      if (banner) banner.style.display = 'none';
       this.onCreateRoom?.();
     });
 
@@ -159,6 +168,26 @@ export class UIManager {
     document.getElementById('btn-settings')?.addEventListener('click', () => {
       this.showSettingsModal();
     });
+  }
+
+  public showMenuError(message: string): void {
+    const banner = document.getElementById('menu-error-banner');
+    if (banner) {
+      banner.textContent = message;
+      banner.style.display = 'block';
+    } else {
+      alert(message);
+    }
+    const createBtn = document.getElementById('btn-create-room') as HTMLButtonElement | null;
+    if (createBtn) {
+      createBtn.disabled = false;
+      createBtn.innerText = 'Create Room';
+    }
+    const joinBtn = document.getElementById('btn-submit-join') as HTMLButtonElement | null;
+    if (joinBtn) {
+      joinBtn.disabled = false;
+      joinBtn.innerText = 'Connect';
+    }
   }
 
   public showJoinModal(): void {

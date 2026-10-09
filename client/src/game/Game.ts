@@ -98,6 +98,10 @@ export class Game {
     this.particleSystem = new ParticleSystem(this.scene);
     this.inputManager = new InputManager(this.renderer.domElement);
     this.networkManager = new NetworkManager();
+    // Auto-connect to WebSocket server on boot so room actions are instantaneous
+    this.networkManager.connect().catch((e) => {
+      console.warn('Initial WebSocket auto-connect notice:', e);
+    });
     this.uiManager = new UIManager(this.soundSystem);
     this.minimap = new Minimap();
     this.minimap.hide(); // Hidden until in-game
@@ -112,6 +116,19 @@ export class Game {
       switch (msg.type) {
         case 'ROOM_JOINED': {
           this.playerManager.localPlayerId = msg.playerId;
+          this.networkManager.playerId = msg.playerId;
+          this.networkManager.roomId = msg.roomId;
+          this.networkManager.isHost = msg.isHost;
+
+          // Re-render lobby if already in LOBBY state to ensure host controls (Start Match button) are visible
+          if (this.playersMap.size > 0 && this.currentState === 'LOBBY') {
+            this.uiManager.showLobby(
+              msg.roomId,
+              msg.isHost,
+              Array.from(this.playersMap.values()),
+              msg.gameMode
+            );
+          }
           break;
         }
 
@@ -122,9 +139,14 @@ export class Game {
           }
 
           if (msg.state === 'LOBBY') {
+            const isHost =
+              this.networkManager.isHost ||
+              (!!this.networkManager.playerId && (msg as any).hostId === this.networkManager.playerId) ||
+              (msg.players.length > 0 && msg.players[0].id === this.networkManager.playerId);
+
             this.uiManager.showLobby(
               msg.roomId,
-              this.networkManager.isHost,
+              isHost,
               msg.players,
               msg.gameMode
             );
@@ -256,7 +278,11 @@ export class Game {
 
   private setupUICallbacks(): void {
     this.uiManager.onCreateRoom = async () => {
-      await this.ensureConnected();
+      const connected = await this.ensureConnected();
+      if (!connected) {
+        this.uiManager.showMenuError('Sunucuya bağlanılamadı. Lütfen sunucunun açık olduğundan veya internet bağlantınızdan emin olun.');
+        return;
+      }
       this.networkManager.createRoom(
         this.uiManager.playerName,
         this.uiManager.gameMode,
@@ -266,7 +292,11 @@ export class Game {
     };
 
     this.uiManager.onJoinRoom = async (code: string) => {
-      await this.ensureConnected();
+      const connected = await this.ensureConnected();
+      if (!connected) {
+        this.uiManager.showMenuError('Sunucuya bağlanılamadı. Lütfen sunucunun açık olduğundan veya internet bağlantınızdan emin olun.');
+        return;
+      }
       this.networkManager.joinRoom(
         code,
         this.uiManager.playerName,
@@ -369,11 +399,13 @@ export class Game {
     this.networkManager.useGadget(gadget, targetPos);
   }
 
-  private async ensureConnected(): Promise<void> {
+  private async ensureConnected(): Promise<boolean> {
     try {
       await this.networkManager.connect();
+      return true;
     } catch (e) {
       console.warn('Network connect:', e);
+      return false;
     }
   }
 
