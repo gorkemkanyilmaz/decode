@@ -26,18 +26,118 @@
     <!-- UI Overlay Root -->
     <div id="ui-root"></div>
 
-    <!-- Mobile Virtual Joystick Containers -->
+    <!-- Device Orientation Warning Overlay (Landscape Enforcement) -->
+    <div id="orientation-warning-overlay" class="orientation-warning-overlay">
+      <div class="orientation-modal">
+        <div class="orientation-badge">
+          <span class="badge-pulse-dot"></span>
+          <span>TAKTİKSEL YATAY MOD GEREKLİ</span>
+        </div>
+
+        <div class="phone-anim-scene">
+          <div class="phone-glow-ambient"></div>
+          <div class="phone-rotation-ring">
+            <svg class="rotation-arrow-svg" viewBox="0 0 100 100">
+              <path d="M 50 10 A 40 40 0 0 1 90 50" fill="none" stroke="#00f0ff" stroke-width="4" stroke-dasharray="6 4" stroke-linecap="round"/>
+              <polygon points="94,44 90,56 80,48" fill="#00f0ff"/>
+              <path d="M 50 90 A 40 40 0 0 1 10 50" fill="none" stroke="#a855f7" stroke-width="4" stroke-dasharray="6 4" stroke-linecap="round"/>
+              <polygon points="6,56 10,44 20,52" fill="#a855f7"/>
+            </svg>
+          </div>
+          <div class="phone-chassis">
+            <div class="phone-notch"></div>
+            <div class="phone-display">
+              <div class="phone-display-reticle"></div>
+              <div class="phone-display-title">DECODED</div>
+              <div class="phone-display-sub">YATAY MOD</div>
+            </div>
+            <div class="phone-home-indicator"></div>
+          </div>
+        </div>
+
+        <h2 class="orientation-title">LÜTFEN CİHAZINIZI YAN ÇEVİRİN</h2>
+        <p class="orientation-desc">
+          DECODED, PUBG tarzı profesyonel çift el taktiksel kontroller ve geniş görüş açısı için yatay ekranda oynanacak şekilde optimize edilmiştir.
+        </p>
+
+        <div class="orientation-buttons">
+          <button id="btn-orientation-fullscreen" class="btn-orientation-action btn-orient-primary">
+            <span class="btn-icon">📱</span>
+            <span>Tam Ekran & Yatay Kilitle</span>
+          </button>
+          <button id="btn-orientation-dismiss" class="btn-orientation-action btn-orient-secondary">
+            <span>Yatay Modda Devam Et</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PUBG Mobile Tactical Touch Controls -->
     <div id="touch-controls" class="touch-controls hidden">
+      <!-- Left Movement Joystick Zone -->
       <div id="joystick-move-zone" class="touch-zone move-zone">
         <div id="joystick-move-base" class="joystick-base">
-          <div id="joystick-move-thumb" class="joystick-thumb"></div>
+          <div id="joystick-sprint-lock-track" class="sprint-lock-track">
+            <div class="sprint-track-line"></div>
+            <div id="joystick-sprint-lock" class="sprint-lock-target">
+              <span class="sprint-icon">🏃</span>
+              <span class="sprint-lock-icon">🔒</span>
+              <span class="sprint-text">KİLİT</span>
+            </div>
+          </div>
+          <div id="joystick-move-thumb" class="joystick-thumb">
+            <div class="thumb-center-dot"></div>
+          </div>
         </div>
       </div>
-      <div id="touch-look-zone" class="touch-zone look-zone">
-        <div id="joystick-look-base" class="joystick-base look-joystick-base">
-          <div id="joystick-look-thumb" class="joystick-thumb look-joystick-thumb"></div>
-        </div>
+
+      <!-- PUBG Left Claw Quick Action / Fire Button -->
+      <button id="btn-touch-claw-fire" class="pubg-touch-btn claw-fire-btn" aria-label="Left Quick Decode">
+        <span class="pubg-btn-icon">🎯</span>
+        <span class="pubg-btn-tag">DEKOD</span>
+      </button>
+
+      <!-- Right Look / Swipe Area (Free Camera Aim) -->
+      <div id="touch-look-zone" class="touch-zone look-zone"></div>
+
+      <!-- Right Side Tactical Action Cluster -->
+      <div id="touch-action-cluster" class="pubg-action-cluster">
+        <!-- Scope / Binoculars Zoom Button -->
+        <button id="btn-touch-scope" class="pubg-touch-btn pubg-btn-scope" aria-label="Scope Zoom">
+          <span class="pubg-btn-icon">🔭</span>
+          <span class="pubg-btn-label">DÜRBÜN</span>
+        </button>
+
+        <!-- Smoke / Tactical Gadget Button -->
+        <button id="btn-touch-smoke" class="pubg-touch-btn pubg-btn-smoke" aria-label="Smoke Grenade">
+          <span class="pubg-btn-icon">💨</span>
+          <span class="pubg-btn-label">SİS</span>
+        </button>
+
+        <!-- Crouch Button -->
+        <button id="btn-touch-crouch" class="pubg-touch-btn pubg-btn-crouch" aria-label="Crouch">
+          <span class="pubg-btn-icon">🧎</span>
+          <span class="pubg-btn-label">ÇÖMEL</span>
+        </button>
+
+        <!-- Jump Button -->
+        <button id="btn-touch-jump" class="pubg-touch-btn pubg-btn-jump" aria-label="Jump">
+          <span class="pubg-btn-icon">🦘</span>
+          <span class="pubg-btn-label">ZIPLA</span>
+        </button>
+
+        <!-- Primary Action / DECODE Button (Large PUBG Fire Button) -->
+        <button id="btn-touch-decode" class="pubg-touch-btn pubg-btn-decode" aria-label="Decode Target">
+          <div class="decode-radial-ring"></div>
+          <span class="pubg-btn-icon main-decode-icon">🎯</span>
+          <span class="pubg-btn-label main-decode-label">DEKOD</span>
+        </button>
       </div>
+
+      <!-- Top Right Sensitivity Settings Button -->
+      <button id="btn-touch-settings" class="pubg-touch-btn pubg-btn-settings" aria-label="Control Sensitivity Settings">
+        <span class="pubg-btn-icon">⚙️</span>
+      </button>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

@@ -164,6 +164,7 @@ export class Game {
             this.soundSystem.playRoundStart();
             this.uiManager.showHUD(this.localNumber);
             this.minimap.show();
+            this.inputManager.setTouchControlsVisible(true);
             if (!this.hasSpawned) {
               // Ensure player is at ground level immediately rather than high preview camera
               this.cameraController.setSpawn([0, 0, 0], 0);
@@ -171,12 +172,14 @@ export class Game {
           } else if (msg.state === 'ROUND_END') {
             this.hasSpawned = false;
             this.minimap.hide();
+            this.inputManager.setTouchControlsVisible(false);
             const playersList = Array.from(this.playersMap.values());
             const winner = playersList.sort((a, b) => b.score - a.score)[0];
             this.uiManager.showRoundEnd(playersList, winner?.name || 'Top Agent');
           } else if (msg.state === 'LOBBY') {
             this.hasSpawned = false;
             this.minimap.hide();
+            this.inputManager.setTouchControlsVisible(false);
           }
           break;
         }
@@ -320,6 +323,7 @@ export class Game {
       // Re-enter the arena HUD immediately after number confirmation
       if (this.currentState === 'PLAYING') {
         this.uiManager.showHUD(this.localNumber);
+        this.inputManager.setTouchControlsVisible(true);
         if (window.innerWidth > 768) {
           this.minimap.show();
         }
@@ -337,6 +341,16 @@ export class Game {
     this.uiManager.onQualityChange = (q: 'low' | 'medium' | 'high') => {
       this.worldBuilder.setGraphicsQuality(q);
     };
+
+    this.uiManager.onOpenSensitivitySettings = () => {
+      this.uiManager.showSensitivityModal(this.inputManager);
+    };
+
+    this.uiManager.onKeypadToggle = (isOpen: boolean) => {
+      if (this.inputManager.isMobile) {
+        this.inputManager.setTouchControlsVisible(!isOpen && this.currentState === 'PLAYING');
+      }
+    };
   }
 
   private setupInputCallbacks(): void {
@@ -348,6 +362,18 @@ export class Game {
         );
         this.uiManager.toggleKeypad(target?.id, target?.name);
       }
+    };
+
+    this.inputManager.onScopeToggle = () => {
+      this.handleGadgetAction('binoculars');
+    };
+
+    this.inputManager.onSmokeUse = () => {
+      this.handleGadgetAction('smoke');
+    };
+
+    this.inputManager.onOpenSettings = () => {
+      this.uiManager.showSensitivityModal(this.inputManager);
     };
 
     this.inputManager.onGadgetUse = (slot: number) => {
@@ -416,6 +442,7 @@ export class Game {
 
     // 1. Update Camera and Local Movement
     if (this.currentState === 'PLAYING') {
+      this.inputManager.isZoomed = this.cameraController.isZoomed;
       this.inputManager.update(delta);
       const moveInput = this.inputManager.getMovementInput();
       this.cameraController.update(

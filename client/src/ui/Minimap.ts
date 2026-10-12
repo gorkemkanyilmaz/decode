@@ -31,26 +31,51 @@ export class Minimap {
   }
 
   private applyResponsiveLayout(): void {
-    const isMobile = window.innerWidth <= 768 || window.innerHeight <= 520;
-    this.size = isMobile ? 105 : 150;
-    this.padding = isMobile ? 12 : 16;
-    this.scale = (this.size / 2 - 8) / ARENA_RADIUS;
+    const isMobile =
+      window.innerWidth <= 1024 ||
+      window.innerHeight <= 600 ||
+      'ontouchstart' in window ||
+      navigator.maxTouchPoints > 0;
 
-    this.container.style.cssText = `
-      position: fixed;
-      bottom: ${this.padding}px;
-      right: ${this.padding}px;
-      width: ${this.size}px;
-      height: ${this.size}px;
-      z-index: 25;
-      pointer-events: none;
-      border-radius: 50%;
-      overflow: hidden;
-      background: rgba(22, 18, 36, 0.78);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(196, 181, 253, 0.6), 0 0 20px rgba(167, 139, 250, 0.35);
-    `;
+    this.size = isMobile ? 80 : 150;
+    this.scale = (this.size / 2 - 6) / ARENA_RADIUS;
+
+    if (isMobile) {
+      // In PUBG Mobile, radar minimap is docked at top-right, leaving bottom-right clear for controls
+      this.container.style.cssText = `
+        position: fixed;
+        top: 8px;
+        right: 70px;
+        bottom: auto;
+        width: ${this.size}px;
+        height: ${this.size}px;
+        z-index: 24;
+        pointer-events: none;
+        border-radius: 50%;
+        overflow: hidden;
+        background: rgba(15, 23, 42, 0.85);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6), 0 0 0 1.5px rgba(0, 240, 255, 0.5), 0 0 16px rgba(0, 240, 255, 0.25);
+      `;
+    } else {
+      this.container.style.cssText = `
+        position: fixed;
+        bottom: 16px;
+        right: 16px;
+        top: auto;
+        width: ${this.size}px;
+        height: ${this.size}px;
+        z-index: 20;
+        pointer-events: none;
+        border-radius: 50%;
+        overflow: hidden;
+        background: rgba(22, 18, 36, 0.78);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(196, 181, 253, 0.6), 0 0 20px rgba(167, 139, 250, 0.35);
+      `;
+    }
 
     this.canvas.width = this.size * 2; // High DPI
     this.canvas.height = this.size * 2;

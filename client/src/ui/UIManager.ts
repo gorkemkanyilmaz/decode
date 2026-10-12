@@ -29,6 +29,8 @@ export class UIManager {
   public onEliminationAttempt: ((targetId: string, num: string) => void) | null = null;
   public onGadgetClick: ((gadget: GadgetType) => void) | null = null;
   public onQualityChange: ((quality: 'low' | 'medium' | 'high') => void) | null = null;
+  public onOpenSensitivitySettings: (() => void) | null = null;
+  public onKeypadToggle: ((isOpen: boolean) => void) | null = null;
 
   private gadgetCooldowns: Map<string, number> = new Map();
 
@@ -58,53 +60,66 @@ export class UIManager {
   public showMainMenu(): void {
     this.root.innerHTML = `
       <div class="screen-overlay">
-        <div class="glass-card interactive">
-          <h1 class="game-logo">DECODED</h1>
-          <p class="game-tagline">3D Number Hunt &bull; Read &bull; Remember &bull; Eliminate</p>
+        <div class="glass-card interactive menu-widescreen-card">
+          <div class="menu-layout-grid">
+            <!-- Left Column: Identity & Customization -->
+            <div class="menu-col menu-col-profile">
+              <div class="menu-brand-header">
+                <h1 class="game-logo">DECODED</h1>
+                <p class="game-tagline">3D Number Hunt &bull; Read &bull; Eliminate</p>
+              </div>
 
-          <div class="input-group">
-            <label class="input-label">Agent Codename</label>
-            <input type="text" id="menu-name-input" class="text-input" value="${this.playerName}" maxlength="14" />
-          </div>
+              <div class="input-group compact">
+                <label class="input-label">Agent Codename</label>
+                <input type="text" id="menu-name-input" class="text-input" value="${this.playerName}" maxlength="14" />
+              </div>
 
-          <div class="input-group">
-            <label class="input-label">Identity Color</label>
-            <div class="swatches" id="color-swatches">
-              ${GAME_CONSTANTS.COLOR_PALETTE.map(
-                (c) => `<div class="swatch ${c === this.playerColor ? 'selected' : ''}" style="background-color: ${c}" data-color="${c}"></div>`
-              ).join('')}
+              <div class="input-group compact">
+                <label class="input-label">Identity Color</label>
+                <div class="swatches compact" id="color-swatches">
+                  ${GAME_CONSTANTS.COLOR_PALETTE.map(
+                    (c) => `<div class="swatch ${c === this.playerColor ? 'selected' : ''}" style="background-color: ${c}" data-color="${c}"></div>`
+                  ).join('')}
+                </div>
+              </div>
+
+              <div class="input-group compact">
+                <label class="input-label">Tactical Accessory</label>
+                <div class="accessory-options compact" id="accessory-options">
+                  <button class="accessory-btn ${this.playerAccessory === 'fedora' ? 'selected' : ''}" data-acc="fedora">Fedora</button>
+                  <button class="accessory-btn ${this.playerAccessory === 'cap' ? 'selected' : ''}" data-acc="cap">Cap</button>
+                  <button class="accessory-btn ${this.playerAccessory === 'headset' ? 'selected' : ''}" data-acc="headset">Headset</button>
+                  <button class="accessory-btn ${this.playerAccessory === 'none' ? 'selected' : ''}" data-acc="none">None</button>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div class="input-group">
-            <label class="input-label">Headwear / Accessory</label>
-            <div class="accessory-options" id="accessory-options">
-              <button class="accessory-btn ${this.playerAccessory === 'fedora' ? 'selected' : ''}" data-acc="fedora">Fedora</button>
-              <button class="accessory-btn ${this.playerAccessory === 'cap' ? 'selected' : ''}" data-acc="cap">Cap</button>
-              <button class="accessory-btn ${this.playerAccessory === 'headset' ? 'selected' : ''}" data-acc="headset">Headset</button>
-              <button class="accessory-btn ${this.playerAccessory === 'none' ? 'selected' : ''}" data-acc="none">None</button>
+            <div class="menu-grid-divider"></div>
+
+            <!-- Right Column: Mission Modes & Matchmaking -->
+            <div class="menu-col menu-col-match">
+              <div class="input-group compact">
+                <label class="input-label">Mission Game Mode</label>
+                <div class="accessory-options compact" id="mode-options">
+                  <button class="accessory-btn ${this.gameMode === 'deathmatch' ? 'selected' : ''}" data-mode="deathmatch">Deathmatch</button>
+                  <button class="accessory-btn ${this.gameMode === 'team_hunt' ? 'selected' : ''}" data-mode="team_hunt">Team Hunt</button>
+                  <button class="accessory-btn ${this.gameMode === 'last_standing' ? 'selected' : ''}" data-mode="last_standing">Last Standing</button>
+                </div>
+              </div>
+
+              <div id="menu-error-banner" style="display: none; color: #ff6b6b; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; font-size: 0.8rem; text-align: center;"></div>
+
+              <div class="menu-action-btns">
+                <button id="btn-create-room" class="btn btn-primary btn-room-action">🚀 Create Room</button>
+                <button id="btn-join-room-modal" class="btn btn-secondary btn-room-action">🔑 Join Room</button>
+              </div>
+
+              <div class="menu-sub-actions">
+                <button id="btn-instructions" class="btn btn-secondary btn-sub-action">❓ How To Play</button>
+                <button id="btn-settings" class="btn btn-secondary btn-sub-action">🖥️ Graphics</button>
+                <button id="btn-menu-sens" class="btn btn-secondary btn-sub-action btn-sens-highlight">⚙️ PUBG Hassasiyet</button>
+              </div>
             </div>
-          </div>
-
-          <div class="input-group">
-            <label class="input-label">Game Mode</label>
-            <div class="accessory-options" id="mode-options">
-              <button class="accessory-btn ${this.gameMode === 'deathmatch' ? 'selected' : ''}" data-mode="deathmatch">Deathmatch</button>
-              <button class="accessory-btn ${this.gameMode === 'team_hunt' ? 'selected' : ''}" data-mode="team_hunt">Team Hunt</button>
-              <button class="accessory-btn ${this.gameMode === 'last_standing' ? 'selected' : ''}" data-mode="last_standing">Last Standing</button>
-            </div>
-          </div>
-
-          <div id="menu-error-banner" style="display: none; color: #ff6b6b; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; padding: 10px 14px; margin-top: 14px; font-size: 0.85rem; text-align: center;"></div>
-
-          <div style="display: flex; gap: 12px; margin-top: 20px;">
-            <button id="btn-create-room" class="btn btn-primary" style="flex: 1;">Create Room</button>
-            <button id="btn-join-room-modal" class="btn btn-secondary" style="flex: 1;">Join Room</button>
-          </div>
-
-          <div style="display: flex; justify-content: center; gap: 16px; margin-top: 18px;">
-            <button id="btn-instructions" class="btn btn-secondary" style="font-size: 0.8rem; padding: 6px 14px;">How To Play</button>
-            <button id="btn-settings" class="btn btn-secondary" style="font-size: 0.8rem; padding: 6px 14px;">Graphics</button>
           </div>
         </div>
       </div>
@@ -167,6 +182,11 @@ export class UIManager {
 
     document.getElementById('btn-settings')?.addEventListener('click', () => {
       this.showSettingsModal();
+    });
+
+    document.getElementById('btn-menu-sens')?.addEventListener('click', () => {
+      this.sound.playKeypadClick(6);
+      this.onOpenSensitivitySettings?.();
     });
   }
 
@@ -249,14 +269,25 @@ export class UIManager {
     const modal = document.createElement('div');
     modal.className = 'decode-modal';
     modal.innerHTML = `
-      <div class="glass-card interactive" style="max-width: 400px;">
-        <h2 style="font-size: 1.5rem; margin-bottom: 16px;">GRAPHICS SETTINGS</h2>
-        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
-          <button class="btn btn-secondary quality-opt" data-q="low">LOW (Mobile / Max FPS)</button>
-          <button class="btn btn-secondary quality-opt" data-q="medium">MEDIUM (Balanced)</button>
-          <button class="btn btn-primary quality-opt" data-q="high">HIGH (Full Shadows & Fog)</button>
+      <div class="glass-card interactive" style="max-width: 420px;">
+        <h2 style="font-size: 1.5rem; margin-bottom: 16px;">OYUN AYARLARI</h2>
+        
+        <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; text-align: left;">GRAFİK KALİTESİ:</div>
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+          <button class="btn btn-secondary quality-opt" data-q="low">DÜŞÜK (Mobil / Maksimum FPS)</button>
+          <button class="btn btn-secondary quality-opt" data-q="medium">ORTA (Dengeli)</button>
+          <button class="btn btn-primary quality-opt" data-q="high">YÜKSEK (Tam Gölgeler & Sis)</button>
         </div>
-        <button id="btn-close-settings" class="btn btn-secondary" style="width: 100%;">Back</button>
+
+        <div style="border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 14px 0;"></div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px;">
+          <button id="btn-modal-open-sens" class="btn btn-primary" style="background: linear-gradient(135deg, #00f0ff 0%, #3b82f6 100%); color: #000; font-weight: 700;">
+            ⚙️ PUBG KONTROL & HASSASİYET AYARLARI
+          </button>
+        </div>
+
+        <button id="btn-close-settings" class="btn btn-secondary" style="width: 100%;">Geri Dön</button>
       </div>
     `;
     this.root.appendChild(modal);
@@ -269,7 +300,232 @@ export class UIManager {
       });
     });
 
+    modal.querySelector('#btn-modal-open-sens')?.addEventListener('click', () => {
+      modal.remove();
+      this.onOpenSensitivitySettings?.();
+    });
+
     modal.querySelector('#btn-close-settings')?.addEventListener('click', () => modal.remove());
+  }
+
+  public showSensitivityModal(inputManager?: any): void {
+    if (!inputManager) {
+      this.onOpenSensitivitySettings?.();
+      return;
+    }
+
+    // Remove any previously open sensitivity modal
+    document.getElementById('pubg-sensitivity-modal')?.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'pubg-sensitivity-modal';
+    modal.className = 'decode-modal pubg-settings-modal';
+
+    const s = inputManager.settings;
+
+    modal.innerHTML = `
+      <div class="glass-card interactive pubg-settings-card">
+        <div class="settings-modal-header">
+          <div class="settings-header-title">
+            <span class="settings-icon">⚙️</span>
+            <h3>PUBG KONTROL & HASSASİYET</h3>
+          </div>
+          <button class="settings-close-x" id="btn-sens-close-x">✕</button>
+        </div>
+
+        <!-- Presets Selector -->
+        <div class="pubg-presets-bar">
+          <span class="preset-label">HAZIR PROFİL:</span>
+          <div class="preset-btns-group">
+            <button class="btn-preset" data-preset="low">Düşük</button>
+            <button class="btn-preset active" data-preset="medium">Orta (PUBG)</button>
+            <button class="btn-preset" data-preset="high">Yüksek (Hızlı)</button>
+          </div>
+        </div>
+
+        <!-- Sliders Grid -->
+        <div class="settings-sliders-grid">
+          <div class="slider-control-group">
+            <div class="slider-info">
+              <label class="slider-label">👁️ Genel Kamera Hassasiyeti</label>
+              <span class="slider-val-badge" id="val-sens-look">${Math.round(s.lookSensitivity * 100)}%</span>
+            </div>
+            <input type="range" class="pubg-slider" id="slider-sens-look" min="20" max="300" step="5" value="${Math.round(s.lookSensitivity * 100)}" />
+          </div>
+
+          <div class="slider-control-group">
+            <div class="slider-info">
+              <label class="slider-label">↔️ Sağa / Sola Dönüş (Yatay Yaw)</label>
+              <span class="slider-val-badge" id="val-sens-yaw">${Math.round(s.yawSensitivity * 100)}%</span>
+            </div>
+            <input type="range" class="pubg-slider" id="slider-sens-yaw" min="20" max="300" step="5" value="${Math.round(s.yawSensitivity * 100)}" />
+          </div>
+
+          <div class="slider-control-group">
+            <div class="slider-info">
+              <label class="slider-label">↕️ Yukarı / Aşağı Bakış (Dikey Pitch)</label>
+              <span class="slider-val-badge" id="val-sens-pitch">${Math.round(s.pitchSensitivity * 100)}%</span>
+            </div>
+            <input type="range" class="pubg-slider" id="slider-sens-pitch" min="20" max="300" step="5" value="${Math.round(s.pitchSensitivity * 100)}" />
+          </div>
+
+          <div class="slider-control-group">
+            <div class="slider-info">
+              <label class="slider-label">🔭 Dürbün / Zoom Hassasiyeti</label>
+              <span class="slider-val-badge" id="val-sens-scope">${Math.round(s.scopeSensitivity * 100)}%</span>
+            </div>
+            <input type="range" class="pubg-slider" id="slider-sens-scope" min="20" max="250" step="5" value="${Math.round(s.scopeSensitivity * 100)}" />
+          </div>
+
+          <div class="slider-control-group">
+            <div class="slider-info">
+              <label class="slider-label">🕹️ Joystick Ölü Bölge (Deadzone)</label>
+              <span class="slider-val-badge" id="val-sens-deadzone">${Math.round(s.joystickDeadzone * 100)}%</span>
+            </div>
+            <input type="range" class="pubg-slider" id="slider-sens-deadzone" min="5" max="35" step="1" value="${Math.round(s.joystickDeadzone * 100)}" />
+          </div>
+
+          <div class="slider-control-group">
+            <div class="slider-info">
+              <label class="slider-label">🏃 Hızlı Koşma Tetik Eşiği</label>
+              <span class="slider-val-badge" id="val-sens-sprint">${Math.round(s.sprintThreshold * 100)}%</span>
+            </div>
+            <input type="range" class="pubg-slider" id="slider-sens-sprint" min="50" max="95" step="5" value="${Math.round(s.sprintThreshold * 100)}" />
+          </div>
+        </div>
+
+        <!-- Toggles Row -->
+        <div class="settings-toggles-row">
+          <label class="pubg-toggle-item">
+            <input type="checkbox" id="toggle-sens-claw" ${s.clawFireEnabled ? 'checked' : ''} />
+            <span class="toggle-custom"></span>
+            <span class="toggle-text">Sol Ateş / Dekod Tuşu (Claw Grip)</span>
+          </label>
+          <label class="pubg-toggle-item">
+            <input type="checkbox" id="toggle-sens-haptic" ${s.hapticFeedback ? 'checked' : ''} />
+            <span class="toggle-custom"></span>
+            <span class="toggle-text">Dokunma Titreşimi (Haptic)</span>
+          </label>
+        </div>
+
+        <!-- Footer Action Buttons -->
+        <div class="settings-actions-footer">
+          <button class="btn btn-secondary" id="btn-sens-reset">Varsayılana Sıfırla</button>
+          <button class="btn btn-primary" id="btn-sens-save">Kaydet & Uygula</button>
+        </div>
+      </div>
+    `;
+
+    this.root.appendChild(modal);
+
+    const updateBadge = (id: string, text: string) => {
+      const el = modal.querySelector(id);
+      if (el) el.textContent = text;
+    };
+
+    const refreshInputsFromSettings = () => {
+      const curr = inputManager.settings;
+      const setVal = (id: string, v: number) => {
+        const inp = modal.querySelector(id) as HTMLInputElement;
+        if (inp) inp.value = Math.round(v * 100).toString();
+      };
+      setVal('#slider-sens-look', curr.lookSensitivity);
+      updateBadge('#val-sens-look', `${Math.round(curr.lookSensitivity * 100)}%`);
+
+      setVal('#slider-sens-yaw', curr.yawSensitivity);
+      updateBadge('#val-sens-yaw', `${Math.round(curr.yawSensitivity * 100)}%`);
+
+      setVal('#slider-sens-pitch', curr.pitchSensitivity);
+      updateBadge('#val-sens-pitch', `${Math.round(curr.pitchSensitivity * 100)}%`);
+
+      setVal('#slider-sens-scope', curr.scopeSensitivity);
+      updateBadge('#val-sens-scope', `${Math.round(curr.scopeSensitivity * 100)}%`);
+
+      setVal('#slider-sens-deadzone', curr.joystickDeadzone);
+      updateBadge('#val-sens-deadzone', `${Math.round(curr.joystickDeadzone * 100)}%`);
+
+      setVal('#slider-sens-sprint', curr.sprintThreshold);
+      updateBadge('#val-sens-sprint', `${Math.round(curr.sprintThreshold * 100)}%`);
+
+      const claw = modal.querySelector('#toggle-sens-claw') as HTMLInputElement;
+      if (claw) claw.checked = curr.clawFireEnabled;
+
+      const haptic = modal.querySelector('#toggle-sens-haptic') as HTMLInputElement;
+      if (haptic) haptic.checked = curr.hapticFeedback;
+    };
+
+    const bindSlider = (
+      id: string,
+      badgeId: string,
+      applyFn: (val: number) => void
+    ) => {
+      const el = modal.querySelector(id) as HTMLInputElement;
+      el?.addEventListener('input', () => {
+        const num = parseFloat(el.value);
+        updateBadge(badgeId, `${num}%`);
+        applyFn(num / 100);
+        modal.querySelectorAll('.btn-preset').forEach((b) => b.classList.remove('active'));
+      });
+    };
+
+    bindSlider('#slider-sens-look', '#val-sens-look', (v) => {
+      inputManager.settings.lookSensitivity = v;
+    });
+    bindSlider('#slider-sens-yaw', '#val-sens-yaw', (v) => {
+      inputManager.settings.yawSensitivity = v;
+    });
+    bindSlider('#slider-sens-pitch', '#val-sens-pitch', (v) => {
+      inputManager.settings.pitchSensitivity = v;
+    });
+    bindSlider('#slider-sens-scope', '#val-sens-scope', (v) => {
+      inputManager.settings.scopeSensitivity = v;
+    });
+    bindSlider('#slider-sens-deadzone', '#val-sens-deadzone', (v) => {
+      inputManager.settings.joystickDeadzone = v;
+    });
+    bindSlider('#slider-sens-sprint', '#val-sens-sprint', (v) => {
+      inputManager.settings.sprintThreshold = v;
+    });
+
+    modal.querySelector('#toggle-sens-claw')?.addEventListener('change', (e) => {
+      inputManager.settings.clawFireEnabled = (e.target as HTMLInputElement).checked;
+      inputManager.saveSettings();
+    });
+
+    modal.querySelector('#toggle-sens-haptic')?.addEventListener('change', (e) => {
+      inputManager.settings.hapticFeedback = (e.target as HTMLInputElement).checked;
+      inputManager.saveSettings();
+    });
+
+    modal.querySelectorAll('.btn-preset').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const target = e.currentTarget as HTMLElement;
+        const p = target.dataset.preset as 'low' | 'medium' | 'high';
+        modal.querySelectorAll('.btn-preset').forEach((b) => b.classList.remove('active'));
+        target.classList.add('active');
+        inputManager.applyPreset(p);
+        refreshInputsFromSettings();
+        this.sound.playKeypadClick(3);
+      });
+    });
+
+    modal.querySelector('#btn-sens-reset')?.addEventListener('click', () => {
+      inputManager.resetSettingsToDefaults();
+      refreshInputsFromSettings();
+      modal.querySelectorAll('.btn-preset').forEach((b) => {
+        b.classList.toggle('active', (b as HTMLElement).dataset.preset === 'medium');
+      });
+      this.sound.playKeypadClick(1);
+    });
+
+    const closeAndSave = () => {
+      inputManager.saveSettings();
+      this.sound.playKeypadClick(5);
+      modal.remove();
+    };
+
+    modal.querySelector('#btn-sens-save')?.addEventListener('click', closeAndSave);
+    modal.querySelector('#btn-sens-close-x')?.addEventListener('click', closeAndSave);
   }
 
   public showLobby(
@@ -282,47 +538,59 @@ export class UIManager {
 
     this.root.innerHTML = `
       <div class="screen-overlay">
-        <div class="glass-card interactive">
-          <h2 style="font-size: 1.5rem; text-transform: uppercase; letter-spacing: 2px;">MISSION LOBBY</h2>
-          <div class="room-code-badge">
-            <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 700;">ROOM CODE:</span>
-            <span class="room-code-text" id="lobby-code">${roomId}</span>
-            <button id="btn-copy-code" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">Copy</button>
-          </div>
+        <div class="glass-card interactive lobby-widescreen-card">
+          <div class="lobby-layout-grid">
+            <!-- Left Column: Mission Controls & Room Info -->
+            <div class="lobby-col lobby-col-info">
+              <h2 class="lobby-title">MISSION LOBBY</h2>
 
-          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">
-            <span>AGENTS (${players.length}/16)</span>
-            <span style="text-transform: uppercase;">MODE: ${gameMode}</span>
-          </div>
-
-          <div class="player-list">
-            ${players
-              .map(
-                (p) => `
-              <div class="player-card">
-                <div class="player-info">
-                  <div class="player-dot" style="background-color: ${p.customization.color};"></div>
-                  <span class="player-name">${p.name}</span>
-                </div>
-                <div>
-                  ${p.id === players[0].id ? '<span class="player-badge badge-host">HOST</span>' : ''}
-                  ${p.isReady ? '<span class="player-badge badge-ready">READY</span>' : ''}
-                </div>
+              <div class="room-code-badge">
+                <span class="room-code-label">CODE:</span>
+                <span class="room-code-text" id="lobby-code">${roomId}</span>
+                <button id="btn-copy-code" class="btn btn-secondary btn-copy-small">Copy</button>
               </div>
-            `
-              )
-              .join('')}
-          </div>
 
-          <div style="display: flex; gap: 12px; margin-top: 16px;">
-            <button id="btn-ready-toggle" class="btn ${isReady ? 'btn-secondary' : 'btn-gold'}" style="flex: 1;">
-              ${isReady ? 'Cancel Ready' : 'Mark Ready'}
-            </button>
-            ${
-              isHost
-                ? '<button id="btn-start-game" class="btn btn-primary" style="flex: 1;">Start Match</button>'
-                : ''
-            }
+              <div class="lobby-meta-row">
+                <span class="lobby-meta-pill">MODE: ${gameMode.toUpperCase()}</span>
+                <span class="lobby-meta-pill">AGENTS: ${players.length}/16</span>
+              </div>
+
+              <div class="lobby-actions-stack">
+                <button id="btn-ready-toggle" class="btn ${isReady ? 'btn-secondary' : 'btn-gold'} btn-lobby-action">
+                  ${isReady ? 'Cancel Ready' : '⚡ Mark Ready'}
+                </button>
+                ${
+                  isHost
+                    ? '<button id="btn-start-game" class="btn btn-primary btn-lobby-action">🎯 Start Match</button>'
+                    : '<div class="waiting-host-notice">Host will start the match when squad is ready...</div>'
+                }
+              </div>
+            </div>
+
+            <div class="lobby-grid-divider"></div>
+
+            <!-- Right Column: Squad Agents Roster -->
+            <div class="lobby-col lobby-col-roster">
+              <div class="roster-header">SQUAD AGENTS (${players.length})</div>
+              <div class="player-list compact-grid">
+                ${players
+                  .map(
+                    (p) => `
+                  <div class="player-card">
+                    <div class="player-info">
+                      <div class="player-dot" style="background-color: ${p.customization.color};"></div>
+                      <span class="player-name">${p.name}</span>
+                    </div>
+                    <div class="player-status-badges">
+                      ${p.id === players[0].id ? '<span class="player-badge badge-host">HOST</span>' : ''}
+                      ${p.isReady ? '<span class="player-badge badge-ready">READY</span>' : ''}
+                    </div>
+                  </div>
+                `
+                  )
+                  .join('')}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -352,43 +620,49 @@ export class UIManager {
 
     this.root.innerHTML = `
       <div class="screen-overlay">
-        <div class="glass-card interactive" style="max-width: 440px;">
-          <h2 style="font-size: 1.8rem; color: var(--accent-cyan); letter-spacing: 2px;">
-            ${isRespawn ? 'RESPAWN CIPHER' : 'ASSIGN YOUR CIPHER'}
-          </h2>
-          <p style="color: var(--text-muted); font-size: 0.9rem; margin: 8px 0;">
-            This 4-digit number will be mounted on your forehead. Keep it safe from opponents!
-          </p>
+        <div class="glass-card interactive cipher-widescreen-card">
+          <div class="cipher-layout-grid">
+            <!-- Left Column: Cipher Info & Lock-In -->
+            <div class="cipher-col cipher-col-info">
+              <h2 class="cipher-title">${isRespawn ? 'RESPAWN CIPHER' : 'ASSIGN CIPHER'}</h2>
+              <p class="cipher-subtitle">Mounted on your forehead. Keep it hidden from opponents!</p>
 
-          <div style="font-family: var(--font-mono); font-size: 1.1rem; color: var(--accent-gold); margin: 6px 0;">
-            LOCK-IN TIME: <span id="choose-num-timer">${timeLeft}s</span>
+              <div class="cipher-timer-chip">
+                <span>LOCK-IN TIME:</span> <strong id="choose-num-timer">${timeLeft}s</strong>
+              </div>
+
+              <div class="number-selector-box compact" id="chosen-number-display">
+                <div class="number-digit-slot">${chosen[0]}</div>
+                <div class="number-digit-slot">${chosen[1]}</div>
+                <div class="number-digit-slot">${chosen[2]}</div>
+                <div class="number-digit-slot">${chosen[3]}</div>
+              </div>
+
+              <button id="btn-confirm-number" class="btn btn-primary btn-lock-in">
+                🔒 Lock In Number
+              </button>
+            </div>
+
+            <div class="cipher-grid-divider"></div>
+
+            <!-- Right Column: Numeric Keypad -->
+            <div class="cipher-col cipher-col-keypad">
+              <div class="keypad-grid-compact" id="selection-keypad">
+                <button class="keypad-key" data-k="1">1</button>
+                <button class="keypad-key" data-k="2">2</button>
+                <button class="keypad-key" data-k="3">3</button>
+                <button class="keypad-key" data-k="4">4</button>
+                <button class="keypad-key" data-k="5">5</button>
+                <button class="keypad-key" data-k="6">6</button>
+                <button class="keypad-key" data-k="7">7</button>
+                <button class="keypad-key" data-k="8">8</button>
+                <button class="keypad-key" data-k="9">9</button>
+                <button class="keypad-key key-rnd" data-k="rand">RND</button>
+                <button class="keypad-key" data-k="0">0</button>
+                <button class="keypad-key key-back" data-k="back">&larr;</button>
+              </div>
+            </div>
           </div>
-
-          <div class="number-selector-box" id="chosen-number-display">
-            <div class="number-digit-slot">${chosen[0]}</div>
-            <div class="number-digit-slot">${chosen[1]}</div>
-            <div class="number-digit-slot">${chosen[2]}</div>
-            <div class="number-digit-slot">${chosen[3]}</div>
-          </div>
-
-          <div class="keypad-grid" id="selection-keypad">
-            <button class="keypad-key" data-k="1">1</button>
-            <button class="keypad-key" data-k="2">2</button>
-            <button class="keypad-key" data-k="3">3</button>
-            <button class="keypad-key" data-k="4">4</button>
-            <button class="keypad-key" data-k="5">5</button>
-            <button class="keypad-key" data-k="6">6</button>
-            <button class="keypad-key" data-k="7">7</button>
-            <button class="keypad-key" data-k="8">8</button>
-            <button class="keypad-key" data-k="9">9</button>
-            <button class="keypad-key" data-k="rand" style="font-size: 1rem; color: var(--accent-gold);">RND</button>
-            <button class="keypad-key" data-k="0">0</button>
-            <button class="keypad-key" data-k="back" style="font-size: 1rem; color: var(--accent-red);">&larr;</button>
-          </div>
-
-          <button id="btn-confirm-number" class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 1.1rem;">
-            Lock In Number
-          </button>
         </div>
       </div>
     `;
@@ -643,51 +917,60 @@ export class UIManager {
     this.keypadInput = '';
     this.currentTargetId = targetId || '';
     this.currentTargetName = targetName || 'Target in Sight';
+    this.onKeypadToggle?.(true);
 
     const modal = document.createElement('div');
     modal.id = 'decode-keypad-modal';
     modal.className = 'decode-modal';
     modal.innerHTML = `
-      <div class="glass-card interactive" style="max-width: 380px;">
-        <div style="font-size: 0.8rem; color: var(--accent-cyan); font-weight: 700; letter-spacing: 2px;">
-          DECODE & ELIMINATE
-        </div>
-        <h3 style="font-size: 1.3rem; margin: 4px 0 16px 0;" id="keypad-target-label">
-          ${this.currentTargetName}
-        </h3>
+      <div class="glass-card interactive decode-widescreen-card">
+        <div class="decode-layout-grid">
+          <!-- Left Column: Target & Actions -->
+          <div class="decode-col decode-col-info">
+            <div class="decode-header-tag">DECODE & ELIMINATE</div>
+            <h3 class="decode-target-name" id="keypad-target-label">
+              ${this.currentTargetName}
+            </h3>
 
-        <div class="number-selector-box" id="keypad-digits-display">
-          <div class="number-digit-slot">_</div>
-          <div class="number-digit-slot">_</div>
-          <div class="number-digit-slot">_</div>
-          <div class="number-digit-slot">_</div>
-        </div>
+            <div class="number-selector-box compact" id="keypad-digits-display">
+              <div class="number-digit-slot">_</div>
+              <div class="number-digit-slot">_</div>
+              <div class="number-digit-slot">_</div>
+              <div class="number-digit-slot">_</div>
+            </div>
 
-        <div class="keypad-grid" id="modal-keypad-buttons">
-          <button class="keypad-key" data-k="1">1</button>
-          <button class="keypad-key" data-k="2">2</button>
-          <button class="keypad-key" data-k="3">3</button>
-          <button class="keypad-key" data-k="4">4</button>
-          <button class="keypad-key" data-k="5">5</button>
-          <button class="keypad-key" data-k="6">6</button>
-          <button class="keypad-key" data-k="7">7</button>
-          <button class="keypad-key" data-k="8">8</button>
-          <button class="keypad-key" data-k="9">9</button>
-          <button class="keypad-key" data-k="clear" style="font-size: 0.9rem; color: var(--accent-red);">CLR</button>
-          <button class="keypad-key" data-k="0">0</button>
-          <button class="keypad-key" data-k="back" style="font-size: 0.9rem; color: var(--accent-gold);">&larr;</button>
-        </div>
+            <div class="decode-actions-stack">
+              <button id="btn-keypad-confirm" class="btn btn-danger btn-confirm-attack">
+                🎯 CONFIRM ATTACK
+              </button>
+              <button id="btn-keypad-cancel" class="btn btn-secondary btn-cancel-decode">
+                Cancel
+              </button>
+            </div>
 
-        <div style="display: flex; gap: 10px;">
-          <button id="btn-keypad-confirm" class="btn btn-danger" style="flex: 2; padding: 14px; font-size: 1.1rem;">
-            CONFIRM ATTACK
-          </button>
-          <button id="btn-keypad-cancel" class="btn btn-secondary" style="flex: 1;">
-            Cancel
-          </button>
-        </div>
+            <div id="keypad-error-msg" class="decode-error-alert" style="display: none;"></div>
+          </div>
 
-        <div id="keypad-error-msg" style="color: var(--accent-red); font-size: 0.85rem; font-weight: 700; margin-top: 10px; display: none;"></div>
+          <div class="decode-grid-divider"></div>
+
+          <!-- Right Column: Keypad -->
+          <div class="decode-col decode-col-keypad">
+            <div class="keypad-grid-compact" id="modal-keypad-buttons">
+              <button class="keypad-key" data-k="1">1</button>
+              <button class="keypad-key" data-k="2">2</button>
+              <button class="keypad-key" data-k="3">3</button>
+              <button class="keypad-key" data-k="4">4</button>
+              <button class="keypad-key" data-k="5">5</button>
+              <button class="keypad-key" data-k="6">6</button>
+              <button class="keypad-key" data-k="7">7</button>
+              <button class="keypad-key" data-k="8">8</button>
+              <button class="keypad-key" data-k="9">9</button>
+              <button class="keypad-key key-clr" data-k="clear">CLR</button>
+              <button class="keypad-key" data-k="0">0</button>
+              <button class="keypad-key key-back" data-k="back">&larr;</button>
+            </div>
+          </div>
+        </div>
       </div>
     `;
 
@@ -748,6 +1031,7 @@ export class UIManager {
   public closeKeypad(): void {
     this.isKeypadOpen = false;
     document.getElementById('decode-keypad-modal')?.remove();
+    this.onKeypadToggle?.(false);
   }
 
   public showEliminationRejected(message: string, cooldownSec: number): void {

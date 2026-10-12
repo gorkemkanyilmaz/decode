@@ -8,55 +8,183 @@ export interface InputState {
   isJumping: boolean;
 }
 
+export interface PubgControlSettings {
+  lookSensitivity: number; // Master look sensitivity: 0.2 - 3.0 (default 1.0)
+  yawSensitivity: number; // Horizontal / Yaw (sağa sola dönme): 0.2 - 3.0 (default 1.0)
+  pitchSensitivity: number; // Vertical / Pitch (yukarı aşağı): 0.2 - 3.0 (default 0.85)
+  scopeSensitivity: number; // Scope / Zoom sensitivity: 0.2 - 2.5 (default 0.65)
+  joystickDeadzone: number; // Ölü bölge: 0.05 - 0.35 (default 0.12)
+  sprintThreshold: number; // Hızlı koşma eşiği: 0.55 - 0.95 (default 0.75)
+  clawFireEnabled: boolean; // Sol ateş tuşu (Claw): true / false (default true)
+  hapticFeedback: boolean; // Titreşim feedback: true / false (default true)
+}
+
+const DEFAULT_SETTINGS: PubgControlSettings = {
+  lookSensitivity: 1.0,
+  yawSensitivity: 1.0,
+  pitchSensitivity: 0.85,
+  scopeSensitivity: 0.65,
+  joystickDeadzone: 0.12,
+  sprintThreshold: 0.75,
+  clawFireEnabled: true,
+  hapticFeedback: true
+};
+
+const STORAGE_KEY = 'decoded_pubg_settings';
+
 export class InputManager {
   private keys: Set<string> = new Set();
   public yaw: number = 0;
   public pitch: number = 0;
   public isLocked: boolean = false;
   public isMobile: boolean = false;
+  public isZoomed: boolean = false;
 
-  // Mobile virtual joystick state
+  // PUBG Control Settings
+  public settings: PubgControlSettings = { ...DEFAULT_SETTINGS };
+
+  // Left Mobile Virtual Joystick State (PUBG Floating & Sprint-Lock)
   private moveJoystickActive: boolean = false;
   private moveJoystickTouchId: number | null = null;
-  private moveJoystickStart: { x: number; y: number } = { x: 0, y: 0 };
+  private moveJoystickCenter: { x: number; y: number } = { x: 90, y: 0 };
   private moveVector: { x: number; z: number } = { x: 0, z: 0 };
+  private isSprintLocked: boolean = false;
 
-  // Right Look/Rotation Joystick state
-  private lookJoystickActive: boolean = false;
-  private lookJoystickTouchId: number | null = null;
-  private lookVector: { x: number; y: number } = { x: 0, y: 0 };
-  private lastLookTouch: { x: number; y: number } = { x: 0, y: 0 };
-  private lookMode: 'none' | 'joystick' | 'swipe' = 'none';
+  // Right Free Camera Swipe State (PUBG Precision Touch Aim)
+  private lookTouchId: number | null = null;
+  private lastLookPos: { x: number; y: number } = { x: 0, y: 0 };
 
-  // Mobile action button states
+  // Mobile Action Button States
   public mobileSprinting: boolean = false;
   public mobileCrouching: boolean = false;
   public mobileJumping: boolean = false;
 
   // Callbacks
   public onDecodeToggle: (() => void) | null = null;
+  public onScopeToggle: (() => void) | null = null;
+  public onSmokeUse: (() => void) | null = null;
+  public onOpenSettings: (() => void) | null = null;
   public onGadgetUse: ((slot: number) => void) | null = null;
   public onDebugToggle: ((key: string) => void) | null = null;
 
   private canvas: HTMLElement;
+  private orientationDismissed: boolean = false;
 
   constructor(canvas: HTMLElement) {
     this.canvas = canvas;
-    this.isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 820;
+    this.loadSettings();
+
+    this.isMobile =
+      'ontouchstart' in window ||
+      navigator.maxTouchPoints > 0 ||
+      window.innerWidth <= 1024 ||
+      window.innerHeight <= 650;
 
     this.setupDesktopControls();
-    if (this.isMobile) {
-      this.setupMobileControls();
-    }
+    this.setupMobileControls();
+    this.setupOrientationHandler();
 
     window.addEventListener('resize', () => {
-      if (window.innerWidth <= 820 && !this.isMobile) {
-        this.isMobile = true;
-        this.setupMobileControls();
+      const mobileCheck =
+        'ontouchstart' in window ||
+        navigator.maxTouchPoints > 0 ||
+        window.innerWidth <= 1024 ||
+        window.innerHeight <= 650;
+      if (mobileCheck !== this.isMobile) {
+        this.isMobile = mobileCheck;
+        this.updateControlsVisibility();
       }
+      this.checkOrientation();
     });
   }
 
+  // =========================================================
+  // Settings Management (PUBG Presets & LocalStorage)
+  // =========================================================
+  public loadSettings(): void {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        this.settings = { ...DEFAULT_SETTINGS, ...parsed };
+      }
+    } catch (e) {
+      this.settings = { ...DEFAULT_SETTINGS };
+    }
+  }
+
+  public saveSettings(newSettings?: Partial<PubgControlSettings>): void {
+    if (newSettings) {
+      this.settings = { ...this.settings, ...newSettings };
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.settings));
+    } catch (e) {
+      console.warn('Could not save settings to localStorage:', e);
+    }
+    this.applySettingsToUI();
+  }
+
+  public resetSettingsToDefaults(): void {
+    this.settings = { ...DEFAULT_SETTINGS };
+    this.saveSettings();
+  }
+
+  public applyPreset(preset: 'low' | 'medium' | 'high'): void {
+    if (preset === 'low') {
+      this.settings = {
+        ...this.settings,
+        lookSensitivity: 0.65,
+        yawSensitivity: 0.7,
+        pitchSensitivity: 0.6,
+        scopeSensitivity: 0.45,
+        joystickDeadzone: 0.15,
+        sprintThreshold: 0.8
+      };
+    } else if (preset === 'medium') {
+      this.settings = {
+        ...this.settings,
+        lookSensitivity: 1.0,
+        yawSensitivity: 1.0,
+        pitchSensitivity: 0.85,
+        scopeSensitivity: 0.65,
+        joystickDeadzone: 0.12,
+        sprintThreshold: 0.75
+      };
+    } else if (preset === 'high') {
+      this.settings = {
+        ...this.settings,
+        lookSensitivity: 1.55,
+        yawSensitivity: 1.6,
+        pitchSensitivity: 1.3,
+        scopeSensitivity: 1.0,
+        joystickDeadzone: 0.08,
+        sprintThreshold: 0.7
+      };
+    }
+    this.saveSettings();
+  }
+
+  private applySettingsToUI(): void {
+    const clawBtn = document.getElementById('btn-touch-claw-fire');
+    if (clawBtn) {
+      clawBtn.style.display = this.settings.clawFireEnabled ? 'flex' : 'none';
+    }
+  }
+
+  private triggerHaptic(durationMs: number = 15): void {
+    if (this.settings.hapticFeedback && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate(durationMs);
+      } catch (e) {
+        // Ignored
+      }
+    }
+  }
+
+  // =========================================================
+  // Desktop Controls
+  // =========================================================
   private setupDesktopControls(): void {
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.code);
@@ -71,7 +199,11 @@ export class InputManager {
         this.onGadgetUse?.(3);
       } else if (e.code === 'Digit4') {
         this.onGadgetUse?.(4);
-      } else if (e.code.startsWith('F') && parseInt(e.code.substring(1)) >= 1 && parseInt(e.code.substring(1)) <= 7) {
+      } else if (
+        e.code.startsWith('F') &&
+        parseInt(e.code.substring(1)) >= 1 &&
+        parseInt(e.code.substring(1)) <= 7
+      ) {
         e.preventDefault();
         this.onDebugToggle?.(e.code);
       }
@@ -81,7 +213,6 @@ export class InputManager {
       this.keys.delete(e.code);
     });
 
-    // Pointer lock for desktop mouse look
     this.canvas.addEventListener('click', () => {
       if (!this.isMobile && !this.isLocked) {
         this.canvas.requestPointerLock?.();
@@ -94,81 +225,129 @@ export class InputManager {
 
     document.addEventListener('mousemove', (e) => {
       if (!this.isLocked) return;
-      const sensitivity = 0.0022;
-      this.yaw -= e.movementX * sensitivity;
-      this.pitch -= e.movementY * sensitivity;
+      const zoomFactor = this.isZoomed ? this.settings.scopeSensitivity : 1.0;
+      const sensitivity = 0.0022 * this.settings.lookSensitivity * zoomFactor;
+      this.yaw -= e.movementX * sensitivity * this.settings.yawSensitivity;
+      this.pitch -= e.movementY * sensitivity * this.settings.pitchSensitivity;
 
-      // Clamp pitch to avoid neck break (-85 to +85 degrees)
-      const maxPitch = (Math.PI / 2) * 0.95;
+      const maxPitch = (Math.PI / 2) * 0.92;
       this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
     });
   }
 
+  // =========================================================
+  // PUBG Mobile Controls (Dual-Touch / Virtual Joystick + Look + Buttons)
+  // =========================================================
   private setupMobileControls(): void {
-    const touchControls = document.getElementById('touch-controls');
-    if (touchControls) {
-      touchControls.classList.remove('hidden');
-    }
+    this.updateControlsVisibility();
+    this.applySettingsToUI();
 
     const moveZone = document.getElementById('joystick-move-zone');
     const moveBase = document.getElementById('joystick-move-base');
     const moveThumb = document.getElementById('joystick-move-thumb');
+    const sprintLockTarget = document.getElementById('joystick-sprint-lock');
     const lookZone = document.getElementById('touch-look-zone');
 
-    if (!moveZone || !lookZone) return;
+    if (!moveZone || !lookZone || !moveBase || !moveThumb) return;
 
-    // Keep base permanently positioned and visible at bottom-left
-    const getJoystickCenter = () => {
-      if (!moveBase) return { x: 80, y: window.innerHeight - 80 };
-      const rect = moveBase.getBoundingClientRect();
+    // Default base center anchor (comfortably placed inside screen, no bottom/left overflow)
+    const defaultCenter = () => {
+      const baseRadius = 48;
+      const margin = 26;
       return {
-        x: rect.left + rect.width / 2,
-        y: rect.top + rect.height / 2
+        x: baseRadius + margin,
+        y: Math.max(120, window.innerHeight - baseRadius - margin)
       };
     };
 
-    let joystickCenter = { x: 80, y: window.innerHeight - 80 };
+    const setBasePosition = (cx: number, cy: number) => {
+      moveBase.style.left = `${cx}px`;
+      moveBase.style.top = `${cy}px`;
+      moveBase.style.bottom = 'auto';
+      moveBase.style.transform = 'translate(-50%, -50%)';
+    };
 
+    const resetBasePosition = () => {
+      const def = defaultCenter();
+      this.moveJoystickCenter = def;
+      setBasePosition(def.x, def.y);
+      moveThumb.style.transform = 'translate(0px, 0px)';
+      moveBase.classList.remove('sprinting', 'sprint-locked');
+    };
+
+    resetBasePosition();
+    window.addEventListener('resize', resetBasePosition);
+
+    // -------------------------------------------------------
+    // 1. LEFT VIRTUAL JOYSTICK (Floating + Dynamic Touch Center)
+    // -------------------------------------------------------
     const startMove = (clientX: number, clientY: number, id: number | null) => {
       this.moveJoystickActive = true;
       this.moveJoystickTouchId = id;
-      joystickCenter = getJoystickCenter();
+
+      // Position base dynamically around thumb, with strictly clamped screen bounds
+      // Never overflow off the screen bottom or left edge
+      const baseRadius = 48;
+      const minX = baseRadius + 24; // at least 24px from left screen edge
+      const maxX = Math.min(window.innerWidth * 0.42, 220);
+      const minY = 120; // leaves space for sprint lock track on top
+      const maxY = Math.max(120, window.innerHeight - baseRadius - 24); // at least 24px above bottom edge
+
+      const clampedX = Math.max(minX, Math.min(maxX, clientX));
+      const clampedY = Math.max(minY, Math.min(maxY, clientY));
+
+      this.moveJoystickCenter = { x: clampedX, y: clampedY };
+      setBasePosition(clampedX, clampedY);
       processMove(clientX, clientY);
     };
 
     const processMove = (clientX: number, clientY: number) => {
       if (!this.moveJoystickActive) return;
 
-      const dx = clientX - joystickCenter.x;
-      const dy = clientY - joystickCenter.y;
+      const dx = clientX - this.moveJoystickCenter.x;
+      const dy = clientY - this.moveJoystickCenter.y;
       const maxDist = 44;
       const actualDist = Math.sqrt(dx * dx + dy * dy);
-      const clampedDist = Math.min(maxDist, actualDist);
       const angle = Math.atan2(dy, dx);
+      const clampedDist = Math.min(maxDist, actualDist);
 
       const thumbX = Math.cos(angle) * clampedDist;
       const thumbY = Math.sin(angle) * clampedDist;
 
-      if (moveThumb) {
-        moveThumb.style.left = `calc(50% + ${thumbX}px)`;
-        moveThumb.style.top = `calc(50% + ${thumbY}px)`;
-      }
+      moveThumb.style.transform = `translate(${thumbX}px, ${thumbY}px)`;
 
-      // If dragged to edge (>= 80% deflection), sprint automatically!
-      const deflection = actualDist / maxDist;
-      if (deflection >= 0.80) {
+      // Auto-Sprint / Koşma Kilidi Detection (Pushed up into sprint zone)
+      const rawDeflection = actualDist / maxDist;
+      const isUpwards = dy < -24;
+
+      if (isUpwards && rawDeflection >= this.settings.sprintThreshold) {
         this.mobileSprinting = true;
-        moveBase?.classList.add('sprinting');
-      } else {
+        moveBase.classList.add('sprinting');
+
+        // If pulled straight up into the sprint lock icon (> 68px vertical pull)
+        if (dy < -62) {
+          this.isSprintLocked = true;
+          moveBase.classList.add('sprint-locked');
+          this.triggerHaptic(18);
+        }
+      } else if (!this.isSprintLocked) {
         this.mobileSprinting = false;
-        moveBase?.classList.remove('sprinting');
+        moveBase.classList.remove('sprinting');
       }
 
-      // Normalized movement vector
-      this.moveVector = {
-        x: thumbX / maxDist,
-        z: -(thumbY / maxDist) // Pull down = backward (+Z in local coords)
-      };
+      // Normalized Movement Vector with Deadzone Handling
+      const deadzone = this.settings.joystickDeadzone;
+      if (rawDeflection <= deadzone) {
+        this.moveVector = { x: 0, z: 0 };
+      } else {
+        const normalized = Math.min(1.0, (rawDeflection - deadzone) / (1.0 - deadzone));
+        // Power curve (1.2) for nuanced walk vs snappier run
+        const curved = Math.pow(normalized, 1.2);
+        this.moveVector = {
+          x: (thumbX / maxDist) * curved,
+          z: -((thumbY / maxDist) * curved) // Pulling up = forward (+Z)
+        };
+      }
     };
 
     const endMove = () => {
@@ -176,227 +355,356 @@ export class InputManager {
       this.moveJoystickTouchId = null;
       this.moveVector = { x: 0, z: 0 };
       this.mobileSprinting = false;
-      if (moveBase) {
-        moveBase.classList.remove('sprinting');
-      }
-      if (moveThumb) {
-        moveThumb.style.left = '50%';
-        moveThumb.style.top = '50%';
-      }
+      this.isSprintLocked = false;
+      resetBasePosition();
     };
 
-    // Touch events for movement joystick
-    moveZone.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      const touch = e.changedTouches[0];
-      startMove(touch.clientX, touch.clientY, touch.identifier);
-    }, { passive: false });
+    moveZone.addEventListener(
+      'touchstart',
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const touch = e.changedTouches[0];
+        startMove(touch.clientX, touch.clientY, touch.identifier);
+      },
+      { passive: false }
+    );
 
-    moveZone.addEventListener('touchmove', (e) => {
-      e.preventDefault();
-      if (!this.moveJoystickActive) return;
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        const touch = e.changedTouches[i];
-        if (touch.identifier === this.moveJoystickTouchId) {
-          processMove(touch.clientX, touch.clientY);
-          break;
+    moveZone.addEventListener(
+      'touchmove',
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!this.moveJoystickActive) return;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const touch = e.changedTouches[i];
+          if (touch.identifier === this.moveJoystickTouchId) {
+            processMove(touch.clientX, touch.clientY);
+            break;
+          }
         }
-      }
-    }, { passive: false });
+      },
+      { passive: false }
+    );
 
-    moveZone.addEventListener('touchend', (e) => {
+    const onTouchEnd = (e: TouchEvent) => {
       for (let i = 0; i < e.changedTouches.length; i++) {
         if (e.changedTouches[i].identifier === this.moveJoystickTouchId) {
           endMove();
           break;
         }
       }
-    });
+    };
 
-    moveZone.addEventListener('touchcancel', (e) => {
-      endMove();
-    });
+    moveZone.addEventListener('touchend', onTouchEnd);
+    moveZone.addEventListener('touchcancel', onTouchEnd);
 
-    // Mouse fallback for joystick dragging
+    // Mouse fallback for desktop testing of joystick
     moveZone.addEventListener('mousedown', (e) => {
       e.preventDefault();
       startMove(e.clientX, e.clientY, null);
-      const onMouseMove = (me: MouseEvent) => processMove(me.clientX, me.clientY);
-      const onMouseUp = () => {
-        window.removeEventListener('mousemove', onMouseMove);
-        window.removeEventListener('mouseup', onMouseUp);
+      const onMM = (me: MouseEvent) => processMove(me.clientX, me.clientY);
+      const onMU = () => {
+        window.removeEventListener('mousemove', onMM);
+        window.removeEventListener('mouseup', onMU);
         endMove();
       };
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
+      window.addEventListener('mousemove', onMM);
+      window.addEventListener('mouseup', onMU);
     });
 
-    // Right Look / Rotation Zone (Dual-mode: Joystick on base, Swipe on open screen)
-    const lookBase = document.getElementById('joystick-look-base');
-    const lookThumb = document.getElementById('joystick-look-thumb');
-
-    const getLookCenter = () => {
-      if (!lookBase) return { x: window.innerWidth - 80, y: window.innerHeight - 80 };
-      const rect = lookBase.getBoundingClientRect();
-      return {
-        x: rect.left + rect.width / 2,
-        y: rect.top + rect.height / 2
-      };
-    };
-
-    let lookCenter = { x: window.innerWidth - 80, y: window.innerHeight - 80 };
-
+    // -------------------------------------------------------
+    // 2. RIGHT FREE LOOK / CAMERA SWIPE (PUBG Precision Aiming)
+    // -------------------------------------------------------
     const startLook = (clientX: number, clientY: number, id: number | null) => {
-      this.lookJoystickActive = true;
-      this.lookJoystickTouchId = id;
-      this.lastLookTouch = { x: clientX, y: clientY };
-      lookCenter = getLookCenter();
-
-      // Check if touch is on or near the right joystick base (within 75px)
-      const distFromCenter = Math.sqrt((clientX - lookCenter.x) ** 2 + (clientY - lookCenter.y) ** 2);
-      if (distFromCenter <= 75) {
-        this.lookMode = 'joystick';
-        if (lookThumb) lookThumb.style.transition = 'none';
-        processLook(clientX, clientY);
-      } else {
-        // Touched open screen: treat as direct precision swipe
-        this.lookMode = 'swipe';
-        this.lookVector = { x: 0, y: 0 };
-      }
+      this.lookTouchId = id;
+      this.lastLookPos = { x: clientX, y: clientY };
     };
 
     const processLook = (clientX: number, clientY: number) => {
-      if (!this.lookJoystickActive) return;
+      if (this.lookTouchId === null) return;
 
-      if (this.lookMode === 'joystick') {
-        const dx = clientX - lookCenter.x;
-        const dy = clientY - lookCenter.y;
-        const maxDist = 44;
-        const actualDist = Math.sqrt(dx * dx + dy * dy);
-        const clampedDist = Math.min(maxDist, actualDist);
-        const angle = Math.atan2(dy, dx);
+      const deltaX = clientX - this.lastLookPos.x;
+      const deltaY = clientY - this.lastLookPos.y;
+      this.lastLookPos = { x: clientX, y: clientY };
 
-        const thumbX = Math.cos(angle) * clampedDist;
-        const thumbY = Math.sin(angle) * clampedDist;
+      const baseSensitivity = 0.0033;
+      const zoomFactor = this.isZoomed ? this.settings.scopeSensitivity : 1.0;
 
-        if (lookThumb) {
-          lookThumb.style.left = `calc(50% + ${thumbX}px)`;
-          lookThumb.style.top = `calc(50% + ${thumbY}px)`;
-        }
+      const sensX =
+        baseSensitivity *
+        this.settings.lookSensitivity *
+        this.settings.yawSensitivity *
+        zoomFactor;
+      const sensY =
+        baseSensitivity *
+        this.settings.lookSensitivity *
+        this.settings.pitchSensitivity *
+        zoomFactor;
 
-        // Apply deadzone (15%) and smooth power curve (1.6) so micro-aim is super steady
-        const rawDeflection = clampedDist / maxDist;
-        const deadzone = 0.15;
-        if (rawDeflection <= deadzone) {
-          this.lookVector = { x: 0, y: 0 };
-        } else {
-          const normalized = (rawDeflection - deadzone) / (1 - deadzone);
-          const curved = Math.pow(normalized, 1.6);
-          this.lookVector = {
-            x: Math.cos(angle) * curved,
-            y: Math.sin(angle) * curved
-          };
-        }
-      } else if (this.lookMode === 'swipe') {
-        // Direct swipe look on open screen
-        const deltaX = clientX - this.lastLookTouch.x;
-        const deltaY = clientY - this.lastLookTouch.y;
-        this.lastLookTouch = { x: clientX, y: clientY };
+      this.yaw -= deltaX * sensX;
+      this.pitch -= deltaY * sensY;
 
-        const swipeSensitivity = 0.0032;
-        this.yaw -= deltaX * swipeSensitivity;
-        this.pitch -= deltaY * swipeSensitivity;
-
-        const maxPitch = (Math.PI / 2) * 0.95;
-        this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
-      }
+      // Clamped vertical pitch (no neck snap)
+      const maxPitch = (Math.PI / 2) * 0.92;
+      this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
     };
 
     const endLook = () => {
-      this.lookJoystickActive = false;
-      this.lookMode = 'none';
-      this.lookJoystickTouchId = null;
-      this.lookVector = { x: 0, y: 0 };
-      if (lookThumb) {
-        lookThumb.style.transition = 'left 0.15s ease-out, top 0.15s ease-out';
-        lookThumb.style.left = '50%';
-        lookThumb.style.top = '50%';
-      }
+      this.lookTouchId = null;
     };
 
-    lookZone.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      const touch = e.changedTouches[0];
-      startLook(touch.clientX, touch.clientY, touch.identifier);
-    }, { passive: false });
+    lookZone.addEventListener(
+      'touchstart',
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const touch = e.changedTouches[0];
+        startLook(touch.clientX, touch.clientY, touch.identifier);
+      },
+      { passive: false }
+    );
 
-    lookZone.addEventListener('touchmove', (e) => {
-      e.preventDefault();
-      if (!this.lookJoystickActive) return;
+    lookZone.addEventListener(
+      'touchmove',
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.lookTouchId === null) return;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const touch = e.changedTouches[i];
+          if (touch.identifier === this.lookTouchId) {
+            processLook(touch.clientX, touch.clientY);
+            break;
+          }
+        }
+      },
+      { passive: false }
+    );
+
+    const onLookEnd = (e: TouchEvent) => {
       for (let i = 0; i < e.changedTouches.length; i++) {
-        const touch = e.changedTouches[i];
-        if (touch.identifier === this.lookJoystickTouchId) {
-          processLook(touch.clientX, touch.clientY);
+        if (e.changedTouches[i].identifier === this.lookTouchId) {
+          endLook();
           break;
         }
       }
-    }, { passive: false });
+    };
 
-    // Global window listeners so releasing finger ANYWHERE immediately stops rotation
+    lookZone.addEventListener('touchend', onLookEnd);
+    lookZone.addEventListener('touchcancel', onLookEnd);
+
+    // Global touch fallback
     window.addEventListener('touchend', (e) => {
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        const id = e.changedTouches[i].identifier;
-        if (id === this.lookJoystickTouchId) {
-          endLook();
-        }
-        if (id === this.moveJoystickTouchId) {
-          endMove();
-        }
-      }
       if (e.touches.length === 0) {
-        endMove();
-        endLook();
+        if (this.moveJoystickActive) endMove();
+        if (this.lookTouchId !== null) endLook();
       }
     });
 
-    window.addEventListener('touchcancel', () => {
-      endMove();
-      endLook();
+    // -------------------------------------------------------
+    // 3. PUBG ACTION BUTTONS
+    // -------------------------------------------------------
+    this.setupTacticalButtons();
+  }
+
+  private setupTacticalButtons(): void {
+    // Helper to attach touch & click listeners with haptic & sound
+    const bindTouchAction = (
+      elementId: string,
+      onDown: () => void,
+      onUp?: () => void
+    ) => {
+      const btn = document.getElementById(elementId);
+      if (!btn) return;
+
+      const handleDown = (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+        btn.classList.add('active');
+        onDown();
+      };
+
+      const handleUp = (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+        btn.classList.remove('active');
+        onUp?.();
+      };
+
+      btn.addEventListener('touchstart', handleDown, { passive: false });
+      btn.addEventListener('touchend', handleUp, { passive: false });
+      btn.addEventListener('touchcancel', handleUp, { passive: false });
+
+      btn.addEventListener('mousedown', handleDown);
+      btn.addEventListener('mouseup', handleUp);
+      btn.addEventListener('mouseleave', handleUp);
+    };
+
+    // Primary Decode Button (Large PUBG Fire Button)
+    bindTouchAction('btn-touch-decode', () => {
+      this.triggerHaptic(25);
+      this.onDecodeToggle?.();
     });
 
-    // Mouse fallback for right joystick
-    lookZone.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      startLook(e.clientX, e.clientY, null);
-      const onMouseMove = (me: MouseEvent) => processLook(me.clientX, me.clientY);
-      const onMouseUp = () => {
-        window.removeEventListener('mousemove', onMouseMove);
-        window.removeEventListener('mouseup', onMouseUp);
-        endLook();
-      };
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
+    // Left Claw Fire / Decode Button
+    bindTouchAction('btn-touch-claw-fire', () => {
+      this.triggerHaptic(25);
+      this.onDecodeToggle?.();
+    });
+
+    // Jump Button
+    bindTouchAction(
+      'btn-touch-jump',
+      () => {
+        this.triggerHaptic(20);
+        this.mobileJumping = true;
+      },
+      () => {
+        this.mobileJumping = false;
+      }
+    );
+
+    // Crouch Button (Toggle state with visual indicator)
+    const crouchBtn = document.getElementById('btn-touch-crouch');
+    bindTouchAction('btn-touch-crouch', () => {
+      this.triggerHaptic(18);
+      this.mobileCrouching = !this.mobileCrouching;
+      if (crouchBtn) {
+        crouchBtn.classList.toggle('toggled', this.mobileCrouching);
+      }
+    });
+
+    // Scope / Binoculars Zoom Button
+    bindTouchAction('btn-touch-scope', () => {
+      this.triggerHaptic(20);
+      this.onScopeToggle?.();
+    });
+
+    // Smoke / Tactical Gadget Button
+    bindTouchAction('btn-touch-smoke', () => {
+      this.triggerHaptic(22);
+      this.onSmokeUse?.();
+    });
+
+    // Control Sensitivity Settings Button
+    bindTouchAction('btn-touch-settings', () => {
+      this.triggerHaptic(15);
+      this.onOpenSettings?.();
     });
   }
 
-  public update(delta: number): void {
-    if (this.lookJoystickActive && this.lookMode === 'joystick') {
-      // Smooth, comfortable yaw & pitch rotation
-      const turnSpeed = 1.9; // approx 108 deg/s at full deflection (was 2.8)
-      const pitchSpeed = 1.3; // gentle vertical tilt
-      this.yaw -= this.lookVector.x * turnSpeed * delta;
-      this.pitch -= this.lookVector.y * pitchSpeed * delta;
+  // =========================================================
+  // Landscape Orientation Warning & Enforcement Overlay
+  // =========================================================
+  private setupOrientationHandler(): void {
+    const overlay = document.getElementById('orientation-warning-overlay');
+    const fullscreenBtn = document.getElementById('btn-orientation-fullscreen');
+    const dismissBtn = document.getElementById('btn-orientation-dismiss');
 
-      const maxPitch = (Math.PI / 2) * 0.95;
-      this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
+    if (fullscreenBtn) {
+      fullscreenBtn.addEventListener('click', async () => {
+        this.triggerHaptic(25);
+        try {
+          if (!document.fullscreenElement) {
+            await document.documentElement.requestFullscreen();
+          }
+          if (screen.orientation && (screen.orientation as any).lock) {
+            await (screen.orientation as any).lock('landscape');
+          }
+        } catch (err) {
+          console.log('Fullscreen/Orientation lock:', err);
+        }
+      });
+    }
+
+    if (dismissBtn) {
+      dismissBtn.addEventListener('click', () => {
+        this.triggerHaptic(15);
+        this.orientationDismissed = true;
+        if (overlay) {
+          overlay.classList.add('force-dismissed');
+        }
+      });
+    }
+
+    if (screen.orientation) {
+      screen.orientation.addEventListener('change', () => {
+        this.checkOrientation();
+      });
+    }
+
+    window.addEventListener('orientationchange', () => {
+      setTimeout(() => this.checkOrientation(), 100);
+    });
+
+    this.checkOrientation();
+  }
+
+  public checkOrientation(): void {
+    const overlay = document.getElementById('orientation-warning-overlay');
+    if (!overlay) return;
+
+    if (this.orientationDismissed) {
+      overlay.classList.add('force-dismissed');
+      return;
+    }
+
+    // A device is in portrait if height > width
+    const isPortrait = window.innerHeight > window.innerWidth;
+    const isTouchOrMobile =
+      'ontouchstart' in window ||
+      navigator.maxTouchPoints > 0 ||
+      window.innerWidth <= 1024;
+
+    if (isPortrait && isTouchOrMobile) {
+      overlay.classList.remove('force-dismissed');
+      overlay.classList.add('visible');
+    } else {
+      overlay.classList.remove('visible');
     }
   }
 
-  public setupMobileActionButtons(): void {
-    // Mobile action buttons removed from design; auto-sprint handled by joystick
+  // =========================================================
+  // Controls Visibility & Game Lifecycle
+  // =========================================================
+  public setTouchControlsVisible(visible: boolean): void {
+    const controls = document.getElementById('touch-controls');
+    if (controls) {
+      const isMobileNow =
+        this.isMobile ||
+        'ontouchstart' in window ||
+        navigator.maxTouchPoints > 0 ||
+        window.innerWidth <= 1024 ||
+        window.innerHeight <= 650;
+
+      if (visible && isMobileNow) {
+        controls.classList.remove('hidden');
+      } else {
+        controls.classList.add('hidden');
+      }
+    }
   }
 
-  public getMovementInput(): { moveX: number; moveZ: number; isSprinting: boolean; isCrouching: boolean; isJumping: boolean } {
+  private updateControlsVisibility(): void {
+    this.setTouchControlsVisible(this.isMobile);
+  }
+
+  public update(delta: number): void {
+    // Mobile direct swipe look is instantaneous; update hook reserved for damping if needed
+  }
+
+  public setupMobileActionButtons(): void {
+    this.setupTacticalButtons();
+  }
+
+  public getMovementInput(): {
+    moveX: number;
+    moveZ: number;
+    isSprinting: boolean;
+    isCrouching: boolean;
+    isJumping: boolean;
+  } {
     let moveX = 0;
     let moveZ = 0;
 
@@ -405,21 +713,27 @@ export class InputManager {
     if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) moveX -= 1;
     if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) moveX += 1;
 
-    // Merge mobile joystick if active
+    // Merge mobile joystick movement vector
     if (this.moveJoystickActive) {
       moveX += this.moveVector.x;
       moveZ += this.moveVector.z;
     }
 
-    // Normalize diagonal
+    // Normalize diagonal velocity
     const len = Math.sqrt(moveX * moveX + moveZ * moveZ);
     if (len > 1) {
       moveX /= len;
       moveZ /= len;
     }
 
-    const isSprinting = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.mobileSprinting;
-    const isCrouching = this.keys.has('KeyC') || this.keys.has('ControlLeft') || this.mobileCrouching;
+    const isSprinting =
+      this.keys.has('ShiftLeft') ||
+      this.keys.has('ShiftRight') ||
+      this.mobileSprinting;
+    const isCrouching =
+      this.keys.has('KeyC') ||
+      this.keys.has('ControlLeft') ||
+      this.mobileCrouching;
     const isJumping = this.keys.has('Space') || this.mobileJumping;
 
     return { moveX, moveZ, isSprinting, isCrouching, isJumping };
