@@ -27,7 +27,7 @@ export class ServerPlayer {
   public isMoving: boolean = false;
 
   // Game state
-  public secretNumber: string = '0000';
+  public secretNumber: string = Math.floor(1000 + Math.random() * 9000).toString();
   public hasSelectedNumber: boolean = false;
   public isDead: boolean = false;
   public spawnProtectedUntil: number = 0;

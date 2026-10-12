@@ -58,6 +58,7 @@ export type ServerMessage =
       type: 'NUMBER_SELECTION_REQUIRED';
       durationSec: number;
       isRespawn?: boolean;
+      assignedNumber?: string;
     }
   | {
       type: 'GAME_SNAPSHOT';

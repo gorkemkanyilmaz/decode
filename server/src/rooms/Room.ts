@@ -433,11 +433,16 @@ export class Room {
       // Spawn players at designated points
       this.spawnAllPlayers();
 
-      // Send prompt for number selection
+      // Send prompt for number selection with pre-assigned cipher
       for (const p of this.players.values()) {
+        if (!p.hasSelectedNumber || p.secretNumber === '0000') {
+          p.secretNumber = Math.floor(1000 + Math.random() * 9000).toString();
+          p.hasSelectedNumber = false;
+        }
         p.send({
           type: 'NUMBER_SELECTION_REQUIRED',
-          durationSec: GAME_CONSTANTS.CHOOSE_NUMBER_TIME_SEC
+          durationSec: GAME_CONSTANTS.CHOOSE_NUMBER_TIME_SEC,
+          assignedNumber: p.secretNumber
         });
       }
 
@@ -445,11 +450,14 @@ export class Room {
         this.roundTimer--;
         if (this.roundTimer <= 0) {
           clearInterval(this.stateTimerInterval!);
-          // Ensure all players have a number
+          // Ensure all players have a confirmed number (keep pre-assigned if not locked in)
           for (const p of this.players.values()) {
             if (!p.hasSelectedNumber) {
-              const rand = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-              p.setSecretNumber(rand);
+              if (!p.secretNumber || p.secretNumber === '0000') {
+                p.setSecretNumber(Math.floor(1000 + Math.random() * 9000).toString());
+              } else {
+                p.hasSelectedNumber = true;
+              }
             }
           }
           this.transitionTo('PLAYING', GAME_CONSTANTS.ROUND_DURATION_DEATHMATCH_SEC);
@@ -512,19 +520,22 @@ export class Room {
 
     player.respawn(bestSpawn.position, bestSpawn.rotationY);
     player.hasSelectedNumber = false;
+    const respawnCipher = Math.floor(1000 + Math.random() * 9000).toString();
+    player.setSecretNumber(respawnCipher);
+    player.hasSelectedNumber = false;
 
     // Prompt player for a new number
     player.send({
       type: 'NUMBER_SELECTION_REQUIRED',
       durationSec: 6,
-      isRespawn: true
+      isRespawn: true,
+      assignedNumber: respawnCipher
     });
 
-    // Auto assign if not picked in 6 seconds
+    // Auto lock in if not picked in 6 seconds
     setTimeout(() => {
       if (!player.hasSelectedNumber) {
-        const rand = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-        player.setSecretNumber(rand);
+        player.hasSelectedNumber = true;
       }
     }, 6000);
   }

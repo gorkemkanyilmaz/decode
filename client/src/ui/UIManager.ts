@@ -614,8 +614,10 @@ export class UIManager {
     });
   }
 
-  public showChooseNumberScreen(durationSec: number = 10, isRespawn: boolean = false): void {
-    let chosen = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  public showChooseNumberScreen(durationSec: number = 10, isRespawn: boolean = false, initialNumber?: string): void {
+    let chosen = initialNumber && /^\d{4}$/.test(initialNumber)
+      ? initialNumber
+      : Math.floor(1000 + Math.random() * 9000).toString();
     let timeLeft = durationSec;
 
     this.root.innerHTML = `
@@ -707,6 +709,13 @@ export class UIManager {
       }
       clearInterval(interval);
       this.sound.playKeypadClick(9);
+      const btn = document.getElementById('btn-confirm-number');
+      if (btn) {
+        btn.innerText = '🔒 Number Locked In!';
+        (btn as HTMLButtonElement).disabled = true;
+        btn.style.opacity = '0.85';
+        btn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+      }
       this.onNumberSelected?.(chosen);
     });
   }
@@ -885,8 +894,16 @@ export class UIManager {
     score: number,
     kills: number,
     deaths: number,
-    targetInfo: { name: string; isForeheadVisible: boolean } | null
+    targetInfo: { name: string; isForeheadVisible: boolean } | null,
+    selfNumber?: string
   ): void {
+    if (selfNumber && selfNumber !== '????') {
+      const selfNumElem = document.getElementById('hud-self-num');
+      if (selfNumElem && selfNumElem.innerText !== selfNumber) {
+        selfNumElem.innerText = selfNumber;
+      }
+    }
+
     const timerElem = document.getElementById('hud-round-timer');
     if (timerElem) {
       const m = Math.floor(timerSec / 60);
@@ -910,6 +927,14 @@ export class UIManager {
       } else {
         crosshair.classList.remove('target-visible');
       }
+    }
+  }
+
+  public updateSelfNumber(num: string): void {
+    if (!num || num === '????') return;
+    const el = document.getElementById('hud-self-num');
+    if (el && el.innerText !== num) {
+      el.innerText = num;
     }
   }
 

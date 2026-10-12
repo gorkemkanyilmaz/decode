@@ -185,7 +185,11 @@ export class Game {
         }
 
         case 'NUMBER_SELECTION_REQUIRED': {
-          this.uiManager.showChooseNumberScreen(msg.durationSec, msg.isRespawn);
+          const initialNum = msg.assignedNumber || (this.localNumber !== '????' && this.localNumber !== '0000' ? this.localNumber : undefined);
+          if (initialNum && /^\d{4}$/.test(initialNum)) {
+            this.localNumber = initialNum;
+          }
+          this.uiManager.showChooseNumberScreen(msg.durationSec, msg.isRespawn, initialNum);
           break;
         }
 
@@ -201,6 +205,7 @@ export class Game {
             this.localDeaths = selfSnap.deaths;
             if (selfSnap.visibleNumber) {
               this.localNumber = selfSnap.visibleNumber;
+              this.uiManager.updateSelfNumber(this.localNumber);
             }
 
             // Align local camera with authoritative spawn position on ground upon entering match or respawning
@@ -318,6 +323,7 @@ export class Game {
 
     this.uiManager.onNumberSelected = (num: string) => {
       this.localNumber = num;
+      this.uiManager.updateSelfNumber(num);
       this.networkManager.selectNumber(num);
 
       // Re-enter the arena HUD immediately after number confirmation
@@ -494,7 +500,8 @@ export class Game {
         this.localScore,
         this.localKills,
         this.localDeaths,
-        target
+        target,
+        this.localNumber
       );
     }
 
