@@ -1239,6 +1239,9 @@ body {
   inset: 0;
   z-index: 25;
   pointer-events: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .touch-controls.hidden {
@@ -1247,8 +1250,10 @@ body {
 
 .touch-zone {
   position: absolute;
-  inset: 0;
-  pointer-events: none;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* Left Movement Joystick Zone - Full 100% height for clean 1:1 viewport coordinate alignment */
@@ -1261,6 +1266,7 @@ body {
   height: 100%;
   pointer-events: auto;
   overflow: hidden;
+  touch-action: none;
 }
 
 /* Right Camera Free Look Trackpad */
@@ -1272,6 +1278,7 @@ body {
   width: 50%;
   height: 100%;
   pointer-events: auto;
+  touch-action: none;
 }
 
 /* PUBG Dynamic Floating Virtual Joystick Base */

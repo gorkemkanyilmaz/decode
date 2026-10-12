@@ -247,16 +247,17 @@ export class InputManager {
     const moveThumb = document.getElementById('joystick-move-thumb');
     const sprintLockTarget = document.getElementById('joystick-sprint-lock');
     const lookZone = document.getElementById('touch-look-zone');
+    const touchControls = document.getElementById('touch-controls');
 
     if (!moveZone || !lookZone || !moveBase || !moveThumb) return;
 
-    // Default base center anchor (comfortably placed inside screen, no bottom/left overflow)
+    // Default anchor position for the virtual joystick (bottom-left)
     const defaultCenter = () => {
       const baseRadius = 48;
       const margin = 26;
       return {
-        x: baseRadius + margin,
-        y: Math.max(120, window.innerHeight - baseRadius - margin)
+        x: baseRadius + margin, // ~74px
+        y: Math.max(120, window.innerHeight - baseRadius - margin) // ~innerHeight - 74px
       };
     };
 
@@ -272,32 +273,50 @@ export class InputManager {
       this.moveJoystickCenter = def;
       setBasePosition(def.x, def.y);
       moveThumb.style.transform = 'translate(0px, 0px)';
-      moveBase.classList.remove('sprinting', 'sprint-locked');
+      moveBase.classList.remove('sprinting');
+      if (!this.isSprintLocked) {
+        moveBase.classList.remove('sprint-locked');
+      }
     };
 
     resetBasePosition();
     window.addEventListener('resize', resetBasePosition);
 
     // -------------------------------------------------------
-    // 1. LEFT VIRTUAL JOYSTICK (Floating + Dynamic Touch Center)
+    // 1. LEFT VIRTUAL JOYSTICK MOVEMENT ENGINE
     // -------------------------------------------------------
     const startMove = (clientX: number, clientY: number, id: number | null) => {
+      // If sprint lock was active, touching joystick area cancels it
+      if (this.isSprintLocked) {
+        this.isSprintLocked = false;
+        moveBase.classList.remove('sprint-locked');
+      }
+
       this.moveJoystickActive = true;
       this.moveJoystickTouchId = id;
 
-      // Position base dynamically around thumb, with strictly clamped screen bounds
-      // Never overflow off the screen bottom or left edge
-      const baseRadius = 48;
-      const minX = baseRadius + 24; // at least 24px from left screen edge
-      const maxX = Math.min(window.innerWidth * 0.42, 220);
-      const minY = 120; // leaves space for sprint lock track on top
-      const maxY = Math.max(120, window.innerHeight - baseRadius - 24); // at least 24px above bottom edge
+      const def = defaultCenter();
+      const distFromAnchor = Math.hypot(clientX - def.x, clientY - def.y);
 
-      const clampedX = Math.max(minX, Math.min(maxX, clientX));
-      const clampedY = Math.max(minY, Math.min(maxY, clientY));
+      // If user touches near default anchor (< 85px), keep base locked there!
+      // If user touches further away in the left zone, dynamically position base under thumb
+      if (distFromAnchor <= 85) {
+        this.moveJoystickCenter = def;
+        setBasePosition(def.x, def.y);
+      } else {
+        const baseRadius = 48;
+        const minX = baseRadius + 24;
+        const maxX = Math.min(window.innerWidth * 0.45, 260);
+        const minY = 110;
+        const maxY = Math.max(120, window.innerHeight - baseRadius - 24);
 
-      this.moveJoystickCenter = { x: clampedX, y: clampedY };
-      setBasePosition(clampedX, clampedY);
+        const clampedX = Math.max(minX, Math.min(maxX, clientX));
+        const clampedY = Math.max(minY, Math.min(maxY, clientY));
+
+        this.moveJoystickCenter = { x: clampedX, y: clampedY };
+        setBasePosition(clampedX, clampedY);
+      }
+
       processMove(clientX, clientY);
     };
 
@@ -307,7 +326,7 @@ export class InputManager {
       const dx = clientX - this.moveJoystickCenter.x;
       const dy = clientY - this.moveJoystickCenter.y;
       const maxDist = 44;
-      const actualDist = Math.sqrt(dx * dx + dy * dy);
+      const actualDist = Math.hypot(dx, dy);
       const angle = Math.atan2(dy, dx);
       const clampedDist = Math.min(maxDist, actualDist);
 
@@ -316,7 +335,7 @@ export class InputManager {
 
       moveThumb.style.transform = `translate(${thumbX}px, ${thumbY}px)`;
 
-      // Auto-Sprint / Koşma Kilidi Detection (Pushed up into sprint zone)
+      // Auto-Sprint / Koşma Kilidi Detection
       const rawDeflection = actualDist / maxDist;
       const isUpwards = dy < -24;
 
@@ -324,11 +343,13 @@ export class InputManager {
         this.mobileSprinting = true;
         moveBase.classList.add('sprinting');
 
-        // If pulled straight up into the sprint lock icon (> 68px vertical pull)
-        if (dy < -62) {
-          this.isSprintLocked = true;
-          moveBase.classList.add('sprint-locked');
-          this.triggerHaptic(18);
+        // Pulled straight up into the sprint lock icon (> 56px vertical pull)
+        if (dy < -56) {
+          if (!this.isSprintLocked) {
+            this.isSprintLocked = true;
+            moveBase.classList.add('sprint-locked');
+            this.triggerHaptic(20);
+          }
         }
       } else if (!this.isSprintLocked) {
         this.mobileSprinting = false;
@@ -341,11 +362,11 @@ export class InputManager {
         this.moveVector = { x: 0, z: 0 };
       } else {
         const normalized = Math.min(1.0, (rawDeflection - deadzone) / (1.0 - deadzone));
-        // Power curve (1.2) for nuanced walk vs snappier run
-        const curved = Math.pow(normalized, 1.2);
+        // Power curve (1.15) for smooth walking transition to running
+        const curved = Math.pow(normalized, 1.15);
         this.moveVector = {
           x: (thumbX / maxDist) * curved,
-          z: -((thumbY / maxDist) * curved) // Pulling up = forward (+Z)
+          z: -((thumbY / maxDist) * curved) // Pulling up (dy < 0) = forward (+Z)
         };
       }
     };
@@ -353,68 +374,21 @@ export class InputManager {
     const endMove = () => {
       this.moveJoystickActive = false;
       this.moveJoystickTouchId = null;
-      this.moveVector = { x: 0, z: 0 };
-      this.mobileSprinting = false;
-      this.isSprintLocked = false;
-      resetBasePosition();
-    };
 
-    moveZone.addEventListener(
-      'touchstart',
-      (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const touch = e.changedTouches[0];
-        startMove(touch.clientX, touch.clientY, touch.identifier);
-      },
-      { passive: false }
-    );
-
-    moveZone.addEventListener(
-      'touchmove',
-      (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!this.moveJoystickActive) return;
-        for (let i = 0; i < e.changedTouches.length; i++) {
-          const touch = e.changedTouches[i];
-          if (touch.identifier === this.moveJoystickTouchId) {
-            processMove(touch.clientX, touch.clientY);
-            break;
-          }
-        }
-      },
-      { passive: false }
-    );
-
-    const onTouchEnd = (e: TouchEvent) => {
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        if (e.changedTouches[i].identifier === this.moveJoystickTouchId) {
-          endMove();
-          break;
-        }
+      if (!this.isSprintLocked) {
+        this.moveVector = { x: 0, z: 0 };
+        this.mobileSprinting = false;
+        resetBasePosition();
+      } else {
+        // Sprint is locked: keep moving forward!
+        this.moveVector = { x: 0, z: 1.0 };
+        this.mobileSprinting = true;
+        moveThumb.style.transform = 'translate(0px, 0px)';
       }
     };
 
-    moveZone.addEventListener('touchend', onTouchEnd);
-    moveZone.addEventListener('touchcancel', onTouchEnd);
-
-    // Mouse fallback for desktop testing of joystick
-    moveZone.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      startMove(e.clientX, e.clientY, null);
-      const onMM = (me: MouseEvent) => processMove(me.clientX, me.clientY);
-      const onMU = () => {
-        window.removeEventListener('mousemove', onMM);
-        window.removeEventListener('mouseup', onMU);
-        endMove();
-      };
-      window.addEventListener('mousemove', onMM);
-      window.addEventListener('mouseup', onMU);
-    });
-
     // -------------------------------------------------------
-    // 2. RIGHT FREE LOOK / CAMERA SWIPE (PUBG Precision Aiming)
+    // 2. RIGHT FREE LOOK / CAMERA SWIPE ENGINE (PUBG Mobile Precision)
     // -------------------------------------------------------
     const startLook = (clientX: number, clientY: number, id: number | null) => {
       this.lookTouchId = id;
@@ -428,7 +402,8 @@ export class InputManager {
       const deltaY = clientY - this.lastLookPos.y;
       this.lastLookPos = { x: clientX, y: clientY };
 
-      const baseSensitivity = 0.0033;
+      // Tuned for natural, responsive PUBG Mobile camera rotation speed
+      const baseSensitivity = 0.0085;
       const zoomFactor = this.isZoomed ? this.settings.scopeSensitivity : 1.0;
 
       const sensX =
@@ -445,8 +420,8 @@ export class InputManager {
       this.yaw -= deltaX * sensX;
       this.pitch -= deltaY * sensY;
 
-      // Clamped vertical pitch (no neck snap)
-      const maxPitch = (Math.PI / 2) * 0.92;
+      // Clamped vertical pitch (no neck snap / flip)
+      const maxPitch = (Math.PI / 2) * 0.88;
       this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
     };
 
@@ -454,56 +429,95 @@ export class InputManager {
       this.lookTouchId = null;
     };
 
-    lookZone.addEventListener(
-      'touchstart',
-      (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const touch = e.changedTouches[0];
-        startLook(touch.clientX, touch.clientY, touch.identifier);
-      },
-      { passive: false }
-    );
+    // -------------------------------------------------------
+    // 3. UNIFIED MULTI-TOUCH EVENT DISPATCHER
+    // -------------------------------------------------------
+    const onTouchStart = (e: TouchEvent) => {
+      const splitX = window.innerWidth * 0.48;
 
-    lookZone.addEventListener(
-      'touchmove',
-      (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (this.lookTouchId === null) return;
-        for (let i = 0; i < e.changedTouches.length; i++) {
-          const touch = e.changedTouches[i];
-          if (touch.identifier === this.lookTouchId) {
-            processLook(touch.clientX, touch.clientY);
-            break;
-          }
-        }
-      },
-      { passive: false }
-    );
-
-    const onLookEnd = (e: TouchEvent) => {
       for (let i = 0; i < e.changedTouches.length; i++) {
-        if (e.changedTouches[i].identifier === this.lookTouchId) {
-          endLook();
-          break;
+        const touch = e.changedTouches[i];
+        const target = touch.target as HTMLElement | null;
+
+        // Ignore touches that hit tactical action buttons (let buttons handle them)
+        if (target && target.closest('.pubg-touch-btn')) {
+          continue;
+        }
+
+        if (touch.clientX < splitX) {
+          // Left side: Movement Joystick
+          if (this.moveJoystickTouchId === null) {
+            startMove(touch.clientX, touch.clientY, touch.identifier);
+          }
+        } else {
+          // Right side: Camera Free Look
+          if (this.lookTouchId === null) {
+            startLook(touch.clientX, touch.clientY, touch.identifier);
+          }
         }
       }
     };
 
-    lookZone.addEventListener('touchend', onLookEnd);
-    lookZone.addEventListener('touchcancel', onLookEnd);
-
-    // Global touch fallback
-    window.addEventListener('touchend', (e) => {
-      if (e.touches.length === 0) {
-        if (this.moveJoystickActive) endMove();
-        if (this.lookTouchId !== null) endLook();
+    const onTouchMove = (e: TouchEvent) => {
+      // Prevent browser default pull-to-refresh or swipe navigation
+      if (this.moveJoystickTouchId !== null || this.lookTouchId !== null) {
+        e.preventDefault();
       }
+
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        if (touch.identifier === this.moveJoystickTouchId) {
+          processMove(touch.clientX, touch.clientY);
+        } else if (touch.identifier === this.lookTouchId) {
+          processLook(touch.clientX, touch.clientY);
+        }
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        if (touch.identifier === this.moveJoystickTouchId) {
+          endMove();
+        } else if (touch.identifier === this.lookTouchId) {
+          endLook();
+        }
+      }
+
+      // Safety check: if all touches are released, ensure everything is clean
+      if (e.touches.length === 0) {
+        if (this.lookTouchId !== null) endLook();
+        if (this.moveJoystickActive) endMove();
+      }
+    };
+
+    // Attach touch listeners to touchControls container and window
+    if (touchControls) {
+      touchControls.addEventListener('touchstart', onTouchStart, { passive: false });
+    }
+    moveZone.addEventListener('touchstart', onTouchStart, { passive: false });
+    lookZone.addEventListener('touchstart', onTouchStart, { passive: false });
+
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onTouchEnd, { passive: false });
+    window.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+    // Desktop mouse fallback for testing joystick with mouse
+    moveZone.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      startMove(e.clientX, e.clientY, null);
+      const onMM = (me: MouseEvent) => processMove(me.clientX, me.clientY);
+      const onMU = () => {
+        window.removeEventListener('mousemove', onMM);
+        window.removeEventListener('mouseup', onMU);
+        endMove();
+      };
+      window.addEventListener('mousemove', onMM);
+      window.addEventListener('mouseup', onMU);
     });
 
     // -------------------------------------------------------
-    // 3. PUBG ACTION BUTTONS
+    // 4. PUBG ACTION BUTTONS
     // -------------------------------------------------------
     this.setupTacticalButtons();
   }
@@ -717,6 +731,8 @@ export class InputManager {
     if (this.moveJoystickActive) {
       moveX += this.moveVector.x;
       moveZ += this.moveVector.z;
+    } else if (this.isSprintLocked) {
+      moveZ += 1.0;
     }
 
     // Normalize diagonal velocity
@@ -729,7 +745,8 @@ export class InputManager {
     const isSprinting =
       this.keys.has('ShiftLeft') ||
       this.keys.has('ShiftRight') ||
-      this.mobileSprinting;
+      this.mobileSprinting ||
+      this.isSprintLocked;
     const isCrouching =
       this.keys.has('KeyC') ||
       this.keys.has('ControlLeft') ||
