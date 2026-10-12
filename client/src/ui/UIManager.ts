@@ -799,28 +799,42 @@ export class UIManager {
     const until = now + seconds * 1000;
     this.gadgetCooldowns.set(g, until);
 
-    const slot = document.querySelector(`.gadget-slot[data-g="${g}"]`);
-    if (!slot) return;
+    const elements: HTMLElement[] = [];
+    const slot = document.querySelector(`.gadget-slot[data-g="${g}"]`) as HTMLElement | null;
+    if (slot) elements.push(slot);
 
-    slot.classList.add('cooldown');
-    let badge = slot.querySelector('.gadget-cooldown-badge') as HTMLElement;
-    if (!badge) {
-      badge = document.createElement('div');
-      badge.className = 'gadget-cooldown-badge';
-      slot.appendChild(badge);
-    }
-    badge.innerText = `${seconds}s`;
+    const mobileBtn = document.getElementById(`btn-touch-${g}`) as HTMLElement | null;
+    if (mobileBtn) elements.push(mobileBtn);
+
+    if (elements.length === 0) return;
+
+    elements.forEach((el) => {
+      el.classList.add('cooldown');
+      let badge = el.querySelector('.gadget-cooldown-badge') as HTMLElement | null;
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.className = 'gadget-cooldown-badge';
+        el.appendChild(badge);
+      }
+      badge.innerText = `${seconds}s`;
+    });
 
     const interval = window.setInterval(() => {
       const remainingMs = (this.gadgetCooldowns.get(g) || 0) - Date.now();
       const remSec = Math.ceil(remainingMs / 1000);
       if (remSec <= 0) {
         clearInterval(interval);
-        slot.classList.remove('cooldown');
-        badge.remove();
+        elements.forEach((el) => {
+          el.classList.remove('cooldown');
+          const badge = el.querySelector('.gadget-cooldown-badge');
+          if (badge) badge.remove();
+        });
         this.gadgetCooldowns.delete(g);
       } else {
-        badge.innerText = `${remSec}s`;
+        elements.forEach((el) => {
+          const badge = el.querySelector('.gadget-cooldown-badge') as HTMLElement | null;
+          if (badge) badge.innerText = `${remSec}s`;
+        });
       }
     }, 250);
   }
